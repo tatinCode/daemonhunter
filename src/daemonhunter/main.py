@@ -12,7 +12,7 @@ def create_app() -> FastAPI:
 
     @app.get("/")
     def read_root():
-        return {"Hello": "World"}
+        return {"daemonhunter": "landing page"}
 
     @app.get("/api/v1/health", response_model=HealthResponse)
     def health():
