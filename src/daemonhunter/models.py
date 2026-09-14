@@ -17,7 +17,7 @@ class Device(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100), unique=True)
-    host: Mapped[str] = mapped_column(String(100), unique=True)
+    host: Mapped[str] = mapped_column(String(255), unique=True)
     status: Mapped[str] = mapped_column(
             String(16),
             default="unknown",
@@ -35,8 +35,8 @@ class Device(Base):
             onupdate=func.now(),
             )
 
-    guest_visible: Mapped(bool) = mapped_column(
+    guest_visible: Mapped[bool] = mapped_column(
             Boolean,
-            default=True,
+            default=False,
             server_default=false(),
             )
