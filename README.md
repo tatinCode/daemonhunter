@@ -5,7 +5,8 @@ device acts as the central monitoring server while Raspberry Pis, Linux
 servers, and other network devices are added as monitored nodes.
 
 The project is in early development. The current implementation provides the
-FastAPI backend foundation and a health endpoint.
+FastAPI backend foundation, a health endpoint, and SQLite persistence managed
+with SQLAlchemy and Alembic.
 
 ## Planned Features
 
@@ -32,6 +33,12 @@ cd daemonhunter
 uv sync
 ```
 
+Apply the database migrations:
+
+```bash
+uv run alembic upgrade head
+```
+
 Start the development server:
 
 ```bash
@@ -39,6 +46,43 @@ uv run uvicorn daemonhunter.main:app --reload
 ```
 
 The API is then available at `http://127.0.0.1:8000`.
+
+## Database
+
+DaemonHunter uses SQLite by default and creates `daemonhunter.db` in the
+project directory. Local database files are ignored by Git.
+
+The database URL can be overridden through the
+`DAEMONHUNTER_DATABASE_URL` environment variable:
+
+```bash
+DAEMONHUNTER_DATABASE_URL=sqlite:///./custom.db uv run alembic upgrade head
+```
+
+After changing a SQLAlchemy model, generate a migration:
+
+```bash
+uv run alembic revision --autogenerate -m "describe the schema change"
+```
+
+Review the generated migration before applying it. Then upgrade the database:
+
+```bash
+uv run alembic upgrade head
+```
+
+Inspect the current and available migration revisions:
+
+```bash
+uv run alembic current
+uv run alembic history
+```
+
+Check whether the models contain schema changes that have not been migrated:
+
+```bash
+uv run alembic check
+```
 
 ## API
 
