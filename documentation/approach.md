@@ -9,7 +9,7 @@ registering devices and determining whether they are online.
 
 1. Backend foundation - complete
 2. Database foundation- complete
-3. Device management API - complete
+3. Device management API
 4. Admin Authentication and guest visibility 
 5. Ping monitoring and status transition loggin
 6. Basic dashboard 
