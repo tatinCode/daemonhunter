@@ -40,7 +40,7 @@ registering devices and determining whether they are online.
 
 ## Current Milestone
 
-
+### Device Management API
 
 #### Goals
 
