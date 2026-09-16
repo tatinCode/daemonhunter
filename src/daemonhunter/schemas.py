@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, StringConstraints
 
 DeviceName = Annotated[
         str,
-        StringConstraints(strip_whitespace=True, min_length=1, max_length=255),
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=100),
         ]
 
 DeviceHost = Annotated[
