@@ -22,7 +22,6 @@ def create_app() -> FastAPI:
                 status="ok",
                 service="daemonhunter",
                 )
-
     return app
 
 
