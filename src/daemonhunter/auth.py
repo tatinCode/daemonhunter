@@ -121,13 +121,13 @@ def get_current_user(
         user_id_text, signed_token = cookie.split(".", maxsplit=1)
         user_id = int(user_id_text)
 
-    except(TypeError, ValueError):
+    except (TypeError, ValueError):
         raise authentication_error() from None
 
     if user_id < 1:
         raise authentication_error()
 
-    user = user.get(User, user_id)
+    user = session.get(User, user_id)
 
     if user is None or not user.active:
         raise authentication_error()

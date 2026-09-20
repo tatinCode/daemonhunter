@@ -28,6 +28,14 @@ router = APIRouter(
         tags=["authentication"],
         )
 
+# User:
+#   id=auto-inc
+#   username
+#   password_hash
+#   session_secret
+#   role
+#   active
+
 
 def get_owner(session: SessionDependency) -> User | None:
     statement = select(User).where(User.role == "owner")
