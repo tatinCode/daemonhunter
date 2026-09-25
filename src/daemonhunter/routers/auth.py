@@ -2,7 +2,7 @@ from secrets import token_urlsafe
 
 from fastapi import APIRouter, HTTPException, Response, status
 from sqlalchemy import select
-from sqlalchemy.orm import IntegrityError
+from sqlalchemy.exc import IntegrityError
 
 from daemonhunter.auth import (
         CurrentUser,
@@ -27,6 +27,8 @@ router = APIRouter(
         prefix="/api/v1/auth",
         tags=["authentication"],
         )
+
+password_hash = PasswordHash.recommend()
 
 # User:
 #   id=auto-inc
@@ -113,7 +115,7 @@ def login(
 
     set_session_cookie(response, user)
 
-    return user
+    raise authentication_error()
 
 
 @router.post(

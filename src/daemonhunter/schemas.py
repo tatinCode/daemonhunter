@@ -83,7 +83,7 @@ class OwnerSetupRequest(BaseModel):
     username: UserName
     password: SecretStr = Field(
             min_length=12,
-            max_lenght=128,
+            max_length=128,
             )
 
 
@@ -92,7 +92,7 @@ class LoginRequest(BaseModel):
 
     username: UserName
     password: SecretStr = Field(
-            min_lenght=1,
+            min_length=1,
             max_length=128,
             )
 
@@ -101,12 +101,12 @@ class PasswordChangeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     current_password: SecretStr = Field(
-            min_lenght=1,
+            min_length=1,
             max_length=128,
             )
 
     new_password: SecretStr = Field(
-            min_lenght=12,
+            min_length=12,
             max_length=128,
             )
 
@@ -116,7 +116,7 @@ class AdminCreateRequest(BaseModel):
 
     username: UserName
     temporary_password: SecretStr = Field(
-            min_lenght=12,
+            min_length=12,
             max_length=128,
             )
 
@@ -146,7 +146,7 @@ class AdminPasswordResetRequest(BaseModel):
 
     username: UserName
     temporary_password: SecretStr = Field(
-            min_lenght=12,
+            min_length=12,
             max_length=128,
             )
 
