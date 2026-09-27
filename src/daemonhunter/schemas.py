@@ -144,27 +144,35 @@ class AdminUpdateRequest(BaseModel):
 class AdminPasswordResetRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    username: UserName
     temporary_password: SecretStr = Field(
             min_length=12,
             max_length=128,
             )
 
 
-class OwnerShipTransferRequest(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class OwnershipTransferRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
+    current_password: SecretStr = Field(
+            min_length=1,
+            max_length=128,
+            )
+    confirm_username: UserName
+
+
+class SetupStatusResponse(BaseModel):
+    setup_required: bool
+
+
+class UserResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: int
     username: str
     role: Literal["owner", "admin"]
     active: bool
     must_change_password: bool
-    created_at: datetime
     updated_at: datetime
-
-
-class SetupStatusResponse(BaseModel):
-    setup_required: bool
+    created_at: datetime
 
 
 class PublicDeviceResponse(BaseModel):

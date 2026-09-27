@@ -49,7 +49,7 @@ def reset_owner_password() -> None:
         owner.password_hash = hash_password(password)
         owner.session_secret = token_urlsafe(32)
         owner.active = True
-        owner.must_have_password = False
+        owner.must_change_password = False
 
         session.commit()
 
@@ -131,14 +131,14 @@ def factory_reset(no_backup: bool) -> None:
 
             print(f"Backup created: {backup_path}")
 
-        for suffix in ("-wal", "-shm"):
-            sidecar = Path(f"{db_path}{suffix}")
-            sidecar.unlink(missing_ok=True)
+    for suffix in ("-wal", "-shm"):
+        sidecar = Path(f"{db_path}{suffix}")
+        sidecar.unlink(missing_ok=True)
 
-        run_migrations()
+    run_migrations()
 
-        print("Factory reset complete.")
-        print("Start DaemonHunter and complete the first-run setup.")
+    print("Factory reset complete.")
+    print("Start DaemonHunter and complete the first-run setup.")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -163,7 +163,12 @@ def build_parser() -> argparse.ArgumentParser:
             help="Reset all DaemonHunter data",
             )
     factory_reset_parser.add_argument(
-            handler=lambda args: factory_reset(args.no_backup),
+            "--no-backup",
+            action="store_true",
+            help="Permanently delete the database without a backup",
+            )
+    factory_reset_parser.set_defaults(
+            handler=lambda args: factory_reset(args.no_backup)
             )
 
     return parser

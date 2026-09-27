@@ -16,7 +16,7 @@ COOKIE_NAME = "daemonhunter_session"
 COOKIE_MAX_AGE = 60 * 60 * 24 * 14
 SESSION_SALT = "daemonhunter-session"
 
-password_hash = PasswordHash.recommend()
+password_hash = PasswordHash.recommended()
 dummy_password_hash = password_hash.hash("not-a-real-password")
 
 SessionDependency = Annotated[Session, Depends(get_session)]
@@ -115,7 +115,7 @@ def get_current_user(
     cookie = request.cookies.get(COOKIE_NAME)
 
     if cookie is None:
-        return authentication_error()
+        raise authentication_error()
 
     try:
         user_id_text, signed_token = cookie.split(".", maxsplit=1)
@@ -181,7 +181,7 @@ def require_owner(user: ReadyAdmin) -> User:
     if user.role != "owner":
         raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Owner acces required",
+                detail="Owner access required",
                 )
 
     return user

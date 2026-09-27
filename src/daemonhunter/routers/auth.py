@@ -28,7 +28,6 @@ router = APIRouter(
         tags=["authentication"],
         )
 
-password_hash = PasswordHash.recommend()
 
 # User:
 #   id=auto-inc
@@ -58,7 +57,7 @@ def setup_status(
             )
 
 
-@router.get(
+@router.post(
         "/setup",
         response_model=UserResponse,
         status_code=status.HTTP_201_CREATED,
@@ -86,6 +85,17 @@ def setup_owner(
             )
 
     session.add(owner)
+
+    try:
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Owner account already configured",
+                ) from error
+
+    session.refresh(owner)
 
     set_session_cookie(response, owner)
 
@@ -115,7 +125,7 @@ def login(
 
     set_session_cookie(response, user)
 
-    raise authentication_error()
+    return user
 
 
 @router.post(
@@ -155,7 +165,7 @@ def change_password(
                 )
 
     user.password_hash = hash_password(
-            password_data.new_password.get_secret_value,
+            password_data.new_password.get_secret_value(),
             )
     user.session_secret = token_urlsafe(32)
     user.must_change_password = False

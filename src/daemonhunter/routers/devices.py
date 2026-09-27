@@ -10,7 +10,7 @@ from daemonhunter.schemas import PublicDeviceResponse
 
 
 router = APIRouter(
-        prefix="/api/v1/device",
+        prefix="/api/v1/devices",
         tags=["Devices"],
         )
 

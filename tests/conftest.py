@@ -32,3 +32,17 @@ def api_client(tmp_path: Path) -> Generator[TestClient, None, None]:
 
     app.dependency_overrides.clear()
     engine.dispose()
+
+
+@pytest.fixture
+def admin_client(api_client: TestClient) -> TestClient:
+    response = api_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "username": "owner",
+                "password": "correct horse battery staple",
+                },
+            )
+
+    assert response.status_code == 201
+    return api_client

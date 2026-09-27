@@ -88,7 +88,7 @@ def create_admin(
     user = User(
             username=admin_data.username,
             password_hash=hash_password(
-                admin_data.password_hash.get_secret_value(),
+                admin_data.temporary_password.get_secret_value(),
                 ),
             session_secret=token_urlsafe(32),
             role="admin",
@@ -105,7 +105,7 @@ def create_admin(
 
         raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="A user with this username already exist",
+                detail="A user with this username already exists",
                 ) from error
 
     session.refresh(user)
@@ -160,14 +160,14 @@ def update_admin(
         user.active = new_active
 
     try:
-        session.commit
+        session.commit()
 
     except IntegrityError as error:
         session.rollback()
 
         raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="A user with this username already exist",
+                detail="A user with this username already exists",
                 ) from error
 
     session.refresh(user)
@@ -229,13 +229,13 @@ def transfer_ownership(
     if not target.active:
         raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Ownership cannot be transfered to an inactive admin",
+                detail="Ownership cannot be transferred to an inactive admin",
                 )
 
     if target.must_change_password:
         raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="The target admin must hcnage their temporary password",
+                detail="The target admin must change their temporary password",
                 )
 
     if not compare_digest(
@@ -248,7 +248,7 @@ def transfer_ownership(
                 )
 
     if not verify_password(
-            transfer_data.current_password.get_secrete_value(),
+            transfer_data.current_password.get_secret_value(),
             owner.password_hash,
             ):
         raise HTTPException(
@@ -260,7 +260,7 @@ def transfer_ownership(
     owner.session_secret = token_urlsafe(32)
 
 # needs to flush the demotion first to satisfy the unique-owner index
-    session.flux()
+    session.flush()
 
     target.role = "owner"
     target.session_secret = token_urlsafe(32)
