@@ -63,3 +63,149 @@ def test_setup_creates_and_logs_in_owner(
 
     assert current_user.status_code == 200
     assert current_user.json()["username"] == "owner"
+
+
+def test_rejects_duplicate_owner_setup(
+        api_client: TestClient,
+        ) -> None:
+    first_response = api_client.post(
+            "/api/v1/auth/setup",
+            json=OWNER_CREDENTIALS,
+            )
+    second_response = api_client.post(
+            "/api/v1/auth/setup",
+            json=OWNER_CREDENTIALS,
+            )
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 409
+
+    assert second_response.json() == {
+            "detail": "Owner account already configured",
+            }
+
+
+def test_rejects_short_owner_password(
+        api_client: TestClient,
+        ) -> None:
+    response = api_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "username": "owner",
+                "password": "short",
+                }
+            )
+
+    response.status_code == 422
+
+    setup_status = api_client.get(
+            "/api/v1/auth/setup-status",
+            )
+
+    assert setup_status.json() == {
+            "setup_required": True,
+            }
+
+
+def test_logout_and_login(
+        api_client: TestClient,
+        ) -> None:
+    setup_response = api_client.post(
+            "/api/v1/auth/setup",
+            json=OWNER_CREDENTIALS,
+            )
+
+    assert setup_response.status_code == 201
+
+    logout_response = api_client.post(
+            "/api/v1/auth/logout",
+            )
+
+    assert logout_response.status_code == 204
+    assert api_client.get(
+            "/api/v1/auth/me"
+            ).status_code == 401
+
+    login_response = api_client.post(
+            "/api/v1/auth/login",
+            json=OWNER_CREDENTIALS
+            )
+
+    assert login_response.status_code == 200
+    assert login_response.json()["username"] == "owner"
+    assert login_response.json()["role"] == "owner"
+    assert api_client.get(
+            "/api/v1/auth/me"
+            ).status_code == 200
+
+
+def test_rejects_invalid_login(
+        api_client: TestClient
+        ) -> None:
+    api_client.post(
+            "/api/v1/auth/setup",
+            json=OWNER_CREDENTIALS
+            )
+
+    api_client.post(
+            "/api/v1/auth/logout",
+            )
+
+    wrong_password = api_client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": "owner",
+                "password": "this password is incorrect",
+                },
+            )
+
+    unknown_user = api_client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": "unknown",
+                "password": "this password is incorrect",
+                },
+            )
+
+    assert wrong_password.status_code == 401
+    assert unknown_user.status_code == 401
+
+    expected_error = {
+            "detail": "Invalid username or password",
+            }
+    assert wrong_password.json() == expected_error
+    assert unknown_user.json() == expected_error
+
+
+def test_requires_session_cookie(
+        api_client: TestClient
+        ) -> None:
+    response = api_client.get("/api/v1/auth/me")
+
+    assert response.status_code == 401
+    assert response.json() == {
+            "detail": "Authentication Required",
+            }
+
+
+def test_rejects_tampered_session_cookie(
+        api_client: TestClient
+        ) -> None:
+    api_client.post(
+            "/api/v1/auth/setup",
+            json=OWNER_CREDENTIALS,
+            )
+
+    api_client.cookies.clear()
+
+    response = api_client.get(
+            "/api/v1/auth/me",
+            headers={
+                "headers": "daemonhunter_session=1.tampered",
+                },
+            )
+
+    assert response.status_code == 401
+    assert response.json() == {
+            "detail": "Authentication Required",
+            }
