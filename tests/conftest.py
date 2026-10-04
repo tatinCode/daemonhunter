@@ -11,7 +11,9 @@ from daemonhunter.main import app
 
 
 @pytest.fixture
-def api_client(tmp_path: Path) -> Generator[TestClient, None, None]:
+def test_session_factory(
+        tmp_path: Path,
+        ) -> Generator[sessionmaker[Session], None, None]:
     database_path = tmp_path / "api-test.db"
     engine = create_engine(f"sqlite:///{database_path}")
     test_session_factory = sessionmaker(
@@ -20,6 +22,16 @@ def api_client(tmp_path: Path) -> Generator[TestClient, None, None]:
             )
 
     Base.metadata.create_all(engine)
+
+    yield test_session_factory
+
+    engine.dispose()
+
+
+@pytest.fixture
+def api_client(
+        test_session_factory: sessionmaker[Session],
+        ) -> Generator[TestClient, None, None]:
 
     def override_get_session() -> Generator[Session, None, None]:
         with test_session_factory() as session:
@@ -31,7 +43,6 @@ def api_client(tmp_path: Path) -> Generator[TestClient, None, None]:
         yield client
 
     app.dependency_overrides.clear()
-    engine.dispose()
 
 
 @pytest.fixture
@@ -46,3 +57,11 @@ def admin_client(api_client: TestClient) -> TestClient:
 
     assert response.status_code == 201
     return api_client
+
+
+@pytest.fixture
+def secondary_client(
+        api_client: TestClient,
+        ) -> Generator[TestClient, None, None]:
+    with TestClient(app) as client:
+        yield client

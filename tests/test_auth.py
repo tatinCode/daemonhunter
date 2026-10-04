@@ -93,10 +93,10 @@ def test_rejects_short_owner_password(
             json={
                 "username": "owner",
                 "password": "short",
-                }
+                },
             )
 
-    response.status_code == 422
+    assert response.status_code == 422
 
     setup_status = api_client.get(
             "/api/v1/auth/setup-status",
@@ -188,6 +188,17 @@ def test_requires_session_cookie(
             }
 
 
+def test_admin_routes_require_session(
+        api_client: TestClient,
+        ) -> None:
+    response = api_client.get("/api/v1/admin/devices")
+
+    assert response.status_code == 401
+    assert response.json() == {
+            "detail": "Authentication Required",
+            }
+
+
 def test_rejects_tampered_session_cookie(
         api_client: TestClient
         ) -> None:
@@ -201,7 +212,7 @@ def test_rejects_tampered_session_cookie(
     response = api_client.get(
             "/api/v1/auth/me",
             headers={
-                "headers": "daemonhunter_session=1.tampered",
+                "Cookie": "daemonhunter_session=1.tampered",
                 },
             )
 
@@ -209,3 +220,63 @@ def test_rejects_tampered_session_cookie(
     assert response.json() == {
             "detail": "Authentication Required",
             }
+
+
+def test_changes_owner_password(
+        api_client: TestClient,
+        ) -> None:
+    api_client.post(
+            "/api/v1/auth/setup",
+            json=OWNER_CREDENTIALS,
+            )
+
+    change_response = api_client.post(
+            "/api/v1/auth/change-password",
+            json={
+                "current_password": OWNER_CREDENTIALS["password"],
+                "new_password": "an even better owner password",
+                },
+            )
+
+    assert change_response.status_code == 200
+    assert change_response.json()["must_change_password"] is False
+
+    api_client.post("/api/v1/auth/logout")
+
+    old_password_login = api_client.post(
+            "/api/v1/auth/login",
+            json=OWNER_CREDENTIALS,
+            )
+    new_password_login = api_client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": "owner",
+                "password": "an even better owner password",
+                },
+            )
+
+    assert old_password_login.status_code == 401
+    assert new_password_login.status_code == 200
+
+
+def test_rejects_incorrect_current_password(
+        api_client: TestClient,
+        ) -> None:
+    api_client.post(
+            "/api/v1/auth/setup",
+            json=OWNER_CREDENTIALS,
+            )
+
+    response = api_client.post(
+            "/api/v1/auth/change-password",
+            json={
+                "current_password": "this is not the current password",
+                "new_password": "an even better owner password",
+                },
+            )
+
+    assert response.status_code == 400
+    assert response.json() == {
+            "detail": "Current password is incorrect",
+            }
+    assert api_client.get("/api/v1/auth/me").status_code == 200
