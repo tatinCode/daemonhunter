@@ -10,10 +10,13 @@ requires-python = ">=3.11"
 dependencies = [
     "alembic>=1.20.0",
     "fastapi[standard]>=0.141.1",
+    "itsdangerous>=2.2.0",
+    "pwdlib[argon2]>=0.3.0",
     "sqlalchemy>=2.0.52",
 ]
 
 [project.scripts]
+daemonhunter = "daemonhunter.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.12.11,<0.13.0"]

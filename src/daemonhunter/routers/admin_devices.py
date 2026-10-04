@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from daemonhunter.auth import require_ready_admin
 from daemonhunter.database import get_session
 from daemonhunter.models import Device
 from daemonhunter.schemas import (
@@ -23,6 +24,7 @@ from daemonhunter.schemas import (
 router = APIRouter(
         prefix="/api/v1/admin",
         tags=["admin-devices"],
+        dependencies=[Depends(require_ready_admin)],
         )
 
 SessionDependency = Annotated[Session, Depends(get_session)]
