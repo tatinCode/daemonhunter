@@ -1,4 +1,4 @@
-from secrets import token_urlsafe
+from secrets import token_urlsafe, compare_digest
 
 from fastapi import APIRouter, HTTPException, Response, status
 from sqlalchemy import select
@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from daemonhunter.auth import (
         CurrentUser,
         SessionDependency,
+        SetupTokenDependency,
         authenticate_user,
         clear_session_cookie,
         hash_password,
@@ -66,11 +67,21 @@ def setup_owner(
         owner_data: OwnerSetupRequest,
         response: Response,
         session: SessionDependency,
+        expected_setup_token: SetupTokenDependency,
         ) -> User:
     if get_owner(session) is not None:
         raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Owner account already configured",
+                )
+
+    if not compare_digest(
+            owner_data.setup_token.get_secret_value(),
+            expected_setup_token
+            ):
+        raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid setup token",
                 )
 
     owner = User(

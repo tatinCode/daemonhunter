@@ -8,6 +8,12 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from daemonhunter.database import Base, get_session
 from daemonhunter.main import app
+from daemonhunter.auth import get_setup_token
+
+
+TEST_SETUP_TOKEN = (
+        "daemonhunter-test-setup-token-1234567890"
+        )
 
 
 @pytest.fixture
@@ -37,6 +43,9 @@ def api_client(
         with test_session_factory() as session:
             yield session
 
+    app.dependency_overrides[get_setup_token] = (
+            lambda: TEST_SETUP_TOKEN
+            )
     app.dependency_overrides[get_session] = override_get_session
 
     with TestClient(app) as client:
@@ -52,6 +61,7 @@ def admin_client(api_client: TestClient) -> TestClient:
             json={
                 "username": "owner",
                 "password": "correct horse battery staple",
+                "setup_token": TEST_SETUP_TOKEN,
                 },
             )
 

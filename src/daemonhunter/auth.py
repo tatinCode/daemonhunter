@@ -7,7 +7,10 @@ from pwdlib import PasswordHash
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from daemonhunter.config import COOKIE_SECURE
+from daemonhunter.config import (
+        COOKIE_SECURE,
+        SETUP_TOKEN,
+        )
 from daemonhunter.database import get_session
 from daemonhunter.models import User
 
@@ -20,6 +23,16 @@ password_hash = PasswordHash.recommended()
 dummy_password_hash = password_hash.hash("not-a-real-password")
 
 SessionDependency = Annotated[Session, Depends(get_session)]
+
+
+def get_setup_token() -> str:
+    return SETUP_TOKEN
+
+
+SetupTokenDependency = Annotated[
+        str,
+        Depends(get_setup_token),
+        ]
 
 
 def hash_password(password: str) -> str:

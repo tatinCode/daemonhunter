@@ -85,6 +85,10 @@ class OwnerSetupRequest(BaseModel):
             min_length=12,
             max_length=128,
             )
+    setup_token: SecretStr = Field(
+            min_length=32,
+            max_length=256,
+            )
 
 
 class LoginRequest(BaseModel):

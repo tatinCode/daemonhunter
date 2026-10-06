@@ -1,8 +1,13 @@
 from fastapi.testclient import TestClient
 
+SETUP_TOKEN = (
+                "daemonhunter-test-setup-token-1234567890"
+                )
+
 OWNER_CREDENTIALS = {
         "username": "owner",
         "password": "correct horse battery staple",
+        "setup_token": SETUP_TOKEN,
         }
 
 
@@ -93,6 +98,7 @@ def test_rejects_short_owner_password(
             json={
                 "username": "owner",
                 "password": "short",
+                "setup_token": SETUP_TOKEN,
                 },
             )
 
@@ -280,3 +286,43 @@ def test_rejects_incorrect_current_password(
             "detail": "Current password is incorrect",
             }
     assert api_client.get("/api/v1/auth/me").status_code == 200
+
+
+def test_rejects_missing_setup_token(
+        api_client: TestClient,
+        ) -> None:
+    response = api_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "username": "owner",
+                "password": "correct horse battery sample",
+                },
+            )
+
+    assert response.status_code == 422
+
+
+def test_rejects_invalid_setup_token(
+        api_client: TestClient,
+        ) -> None:
+    response = api_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "username": "owner",
+                "password": "correct horse battery sample",
+                "setup_token": "invalid-setup-token-1234567890",
+                },
+            )
+
+    assert response.status_code == 403
+    assert response.json() == {
+            "detail": "Invalid setup token",
+            }
+
+    setup_status = api_client.get(
+            "/api/v1/auth/setup-status",
+            )
+
+    assert setup_status.json() == {
+            "setup_required": True,
+            }
