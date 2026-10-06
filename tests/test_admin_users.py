@@ -362,3 +362,40 @@ def test_transfer_ownership_swaps_roles_and_sessions(
     assert new_owner_login.status_code == 200
     assert new_owner_login.json()["role"] == "owner"
     assert secondary_client.get("/api/v1/admin/users").status_code == 200
+
+
+def test_temporary_password_cannot_be_reused(
+        admin_client: TestClient,
+        ) -> None:
+    create_secondary_admin(admin_client)
+    admin_client.post("/api/v1/auth/logout")
+
+    login_response = admin_client.post(
+            "/api/v1/auth/login",
+            json=ADMIN_CREDENTIALS,
+            )
+    assert login_response.status_code == 200
+    assert login_response.json()["must_change_password"] is True
+
+    change_response = admin_client.post(
+            "/api/v1/auth/change-password",
+            json={
+                "current_password": ADMIN_CREDENTIALS["password"],
+                "new_password": ADMIN_CREDENTIALS["password"],
+                },
+            )
+
+    assert change_response.status_code == 400
+    assert change_response.json() == {
+            "detail": (
+                "New password must be different from current password"
+                ),
+            }
+
+    current_user = admin_client.get("/api/v1/auth/me")
+
+    assert current_user.status_code == 200
+    assert current_user.json()["must_change_password"] is True
+    assert admin_client.get(
+            "/api/v1/admin/devices"
+            ).status_code == 403

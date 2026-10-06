@@ -143,7 +143,14 @@ def login(
         "/logout",
         status_code=status.HTTP_204_NO_CONTENT,
         )
-def logout(response: Response) -> None:
+def logout(
+        response: Response,
+        session: SessionDependency,
+        user: CurrentUser,
+        ) -> None:
+    user.session_secret = token_urlsafe(32)
+    session.commit()
+
     clear_session_cookie(response)
 
 
@@ -166,8 +173,15 @@ def change_password(
         user: CurrentUser,
         ) -> User:
 
+    current_password = (
+            password_data.current_password.get_secret_value()
+            )
+    new_password = (
+            password_data.new_password.get_secret_value()
+            )
+
     if not verify_password(
-            password_data.current_password.get_secret_value(),
+            current_password,
             user.password_hash,
             ):
         raise HTTPException(
@@ -175,9 +189,16 @@ def change_password(
                 detail="Current password is incorrect",
                 )
 
-    user.password_hash = hash_password(
-            password_data.new_password.get_secret_value(),
-            )
+    if verify_password(
+            new_password,
+            user.password_hash,
+            ):
+        raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="New password must be different from current password",
+                )
+
+    user.password_hash = hash_password(new_password)
     user.session_secret = token_urlsafe(32)
     user.must_change_password = False
 

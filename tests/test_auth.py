@@ -332,3 +332,80 @@ def test_rejects_invalid_setup_token(
     assert setup_status.json() == {
             "setup_required": True,
             }
+
+
+def test_rejects_reused_owner_password(
+        api_client: TestClient,
+        ) -> None:
+    setup_response = api_client.post(
+            "/api/v1/auth/setup",
+            json=OWNER_SETUP,
+            )
+    assert setup_response.status_code == 201
+
+    response = api_client.post(
+            "/api/v1/auth/change-password",
+            json={
+                "current_password": OWNER_CREDENTIALS["password"],
+                "new_password": OWNER_CREDENTIALS["password"],
+                },
+            )
+
+    assert response.status_code == 400
+    assert response.json() == {
+            "detail": (
+                "New password must be different from current password"
+                ),
+            }
+    assert api_client.get("/api/v1/auth/me").status_code == 200
+
+
+def test_logout_revokes_copied_session(
+        api_client: TestClient,
+        secondary_client: TestClient,
+        ) -> None:
+    setup_response = api_client.post(
+            "/api/v1/auth/setup",
+            json=OWNER_SETUP,
+            )
+    assert setup_response.status_code == 201
+
+    session_cookie = api_client.cookies.get(
+            "daemonhunter_session"
+            )
+    assert session_cookie is not None
+
+    copied_cookie = {
+            "Cookie": (
+                f"daemonhunter_session={session_cookie}"
+                ),
+            }
+
+    assert secondary_client.get(
+            "/api/v1/auth/me",
+            headers=copied_cookie,
+            ).status_code == 200
+
+    logout_response = api_client.post(
+            "/api/v1/auth/logout"
+            )
+
+    assert logout_response.status_code == 204
+    assert api_client.get(
+            "/api/v1/auth/me"
+            ).status_code == 401
+    assert secondary_client.get(
+            "/api/v1/auth/me",
+            headers=copied_cookie,
+            ).status_code == 401
+
+
+def test_logout_requires_authentication(
+        api_client: TestClient,
+        ) -> None:
+    response = api_client.post("/api/v1/auth/logout")
+
+    assert response.status_code == 401
+    assert response.json() == {
+            "detail": "Authentication Required",
+            }
