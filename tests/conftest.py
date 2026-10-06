@@ -1,3 +1,4 @@
+import os
 from collections.abc import Generator
 from pathlib import Path
 
@@ -5,6 +6,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
+
+# This statement before imports is intentional because the
+# environment must be configured before importing application models
+os.environ["DAEMONHUNTER_DATABASE_URL"] = "sqlite:///:memory:"
 
 from daemonhunter.database import Base, get_session
 from daemonhunter.main import app

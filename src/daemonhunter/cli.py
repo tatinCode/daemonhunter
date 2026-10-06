@@ -12,7 +12,11 @@ from sqlalchemy.engine import make_url
 
 from daemonhunter.auth import hash_password
 from daemonhunter.config import DATABASE_URL
-from daemonhunter.database import SessionFactory, engine
+from daemonhunter.database import (
+        SessionFactory,
+        engine,
+        prepare_database_storage,
+        )
 from daemonhunter.models import User
 
 
@@ -38,6 +42,8 @@ def prompt_for_password() -> str:
 
 def reset_owner_password() -> None:
     password = prompt_for_password()
+
+    prepare_database_storage()
 
     with SessionFactory() as session:
         statement = select(User).where(User.role == "owner")
