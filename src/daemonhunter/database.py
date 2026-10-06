@@ -1,7 +1,9 @@
 import os
+import sqlite3
 from collections.abc import Generator
 
 from sqlalchemy import create_engine
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from daemonhunter.config import (
@@ -29,6 +31,32 @@ SessionFactory = sessionmaker(
 
 class Base(DeclarativeBase):
     pass
+
+
+def is_sqlite_busy_error(
+        error: OperationalError,
+        ) -> bool:
+    original_error = error.orig
+
+    if not isinstance(
+            original_error,
+            sqlite3.OperationalError,
+            ):
+        return False
+
+    error_code = getattr(
+            original_error,
+            "sqlite_errorcode",
+            None,
+            )
+
+    return (
+            isinstance(error_code, int)
+            and (error_code & 0xFF) in {
+                sqlite3.SQLITE_BUSY,
+                sqlite3.SQLITE_LOCKED,
+                }
+            )
 
 
 def prepare_database_storage() -> None:

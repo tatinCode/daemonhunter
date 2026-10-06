@@ -9,12 +9,15 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import select
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm.exc import StaleDataError
 
 from daemonhunter.auth import hash_password
 from daemonhunter.config import DATABASE_URL
 from daemonhunter.database import (
         SessionFactory,
         engine,
+        is_sqlite_busy_error,
         prepare_database_storage,
         )
 from daemonhunter.models import User
@@ -46,18 +49,37 @@ def reset_owner_password() -> None:
     prepare_database_storage()
 
     with SessionFactory() as session:
-        statement = select(User).where(User.role == "owner")
-        owner = session.scalar(statement)
+        try:
+            statement = select(User).where(User.role == "owner")
+            owner = session.scalar(statement)
 
-        if owner is None:
-            raise SystemExit("No owner account exists.")
+            if owner is None:
+                raise SystemExit("No owner account exists.")
 
-        owner.password_hash = hash_password(password)
-        owner.session_secret = token_urlsafe(32)
-        owner.active = True
-        owner.must_change_password = False
+            owner.password_hash = hash_password(password)
+            owner.session_secret = token_urlsafe(32)
+            owner.active = True
+            owner.must_change_password = False
 
-        session.commit()
+            session.commit()
+
+        except StaleDataError as error:
+            session.rollback()
+
+            raise SystemExit(
+                    "Owner account was modified concurrently. Try again."
+                    ) from error
+
+        except OperationalError as error:
+            session.rollback()
+
+            if not is_sqlite_busy_error(error):
+                raise
+
+            raise SystemExit(
+                    "Could not lock the database. Stop DaemonHunter "
+                    "and try again."
+                    ) from error
 
     print("Owner password reset. Existing sessions were logged out.")
 

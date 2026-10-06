@@ -98,12 +98,11 @@ def setup_owner(
             must_change_password=False,
             )
 
-    session.add(owner)
-
     try:
-        session.commit()
+        with committed_user_write(session):
+            session.add(owner)
+
     except IntegrityError as error:
-        session.rollback()
         raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Owner account already configured",

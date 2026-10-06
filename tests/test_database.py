@@ -1,14 +1,29 @@
+import sqlite3
 from pathlib import Path
 from stat import S_IMODE
 
 import pytest
 from sqlalchemy import create_engine, select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.orm.exc import StaleDataError
 
 import daemonhunter.database as database
 from daemonhunter.database import Base
 from daemonhunter.models import Device, User
+
+
+def sqlalchemy_operational_error(
+        error_code: int,
+        ) -> OperationalError:
+    original_error = sqlite3.OperationalError("database operation failed")
+    original_error.sqlite_errorcode = error_code
+
+    return OperationalError(
+            statement=None,
+            params=None,
+            orig=original_error,
+            )
 
 
 def test_create_and_retrieve_device(tmp_path: Path) -> None:
@@ -204,3 +219,34 @@ def test_rejects_stale_user_delete(
 
         assert saved_user is not None
         assert saved_user.username == "preserved-user"
+
+
+@pytest.mark.parametrize(
+        "error_code",
+        [
+            sqlite3.SQLITE_BUSY,
+            sqlite3.SQLITE_LOCKED,
+            sqlite3.SQLITE_BUSY | (1 << 8),
+            sqlite3.SQLITE_LOCKED | (1 << 8),
+            ],
+        )
+def test_recognizes_sqlite_contention(error_code: int) -> None:
+    error = sqlalchemy_operational_error(error_code)
+
+    assert database.is_sqlite_busy_error(error) is True
+
+
+def test_rejects_non_contention_operational_error() -> None:
+    error = sqlalchemy_operational_error(sqlite3.SQLITE_IOERR)
+
+    assert database.is_sqlite_busy_error(error) is False
+
+
+def test_rejects_non_sqlite_operational_error() -> None:
+    error = OperationalError(
+            statement=None,
+            params=None,
+            orig=RuntimeError("database is locked"),
+            )
+
+    assert database.is_sqlite_busy_error(error) is False

@@ -99,6 +99,126 @@ def test_reset_owner_password_invalidates_existing_session(
     assert admin_client.get("/api/v1/auth/me").status_code == 401
 
 
+def test_reset_owner_password_reports_stale_owner(
+        admin_client: TestClient,
+        test_session_factory: sessionmaker[Session],
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        ) -> None:
+    stale_session = test_session_factory()
+    stale_owner = stale_session.scalar(
+            select(User).where(User.role == "owner"),
+            )
+
+    assert stale_owner is not None
+
+    owner_id = stale_owner.id
+    stale_session.commit()
+
+    with test_session_factory() as concurrent_session:
+        current_owner = concurrent_session.get(User, owner_id)
+
+        assert current_owner is not None
+
+        current_owner.active = False
+        current_owner.session_secret = "concurrent-session-secret"
+        concurrent_session.commit()
+
+    monkeypatch.setattr(cli, "SessionFactory", lambda: stale_session)
+    monkeypatch.setattr(
+            cli,
+            "prompt_for_password",
+            lambda: "replacement owner password",
+            )
+    monkeypatch.setattr(
+            cli,
+            "hash_password",
+            lambda _: "replacement-password-hash",
+            )
+
+    with pytest.raises(
+            SystemExit,
+            match="Owner account was modified concurrently. Try again.",
+            ):
+        cli.reset_owner_password()
+
+    assert "Owner password reset" not in capsys.readouterr().out
+
+    with test_session_factory() as session:
+        saved_owner = session.get(User, owner_id)
+
+        assert saved_owner is not None
+        assert saved_owner.active is False
+        assert saved_owner.session_secret == "concurrent-session-secret"
+        assert saved_owner.password_hash != "replacement-password-hash"
+
+
+def test_reset_owner_password_reports_busy_database(
+        admin_client: TestClient,
+        test_session_factory: sessionmaker[Session],
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        ) -> None:
+    with (
+            test_session_factory() as locking_session,
+            test_session_factory() as contending_session,
+            ):
+        locking_owner = locking_session.scalar(
+                select(User).where(User.role == "owner"),
+                )
+
+        assert locking_owner is not None
+
+        owner_id = locking_owner.id
+        original_username = locking_owner.username
+        original_password_hash = locking_owner.password_hash
+        original_session_secret = locking_owner.session_secret
+
+        contending_session.connection().exec_driver_sql(
+                "PRAGMA busy_timeout = 0",
+                )
+
+        locking_owner.username = "uncommitted-owner-name"
+        locking_session.flush()
+
+        monkeypatch.setattr(
+                cli,
+                "SessionFactory",
+                lambda: contending_session,
+                )
+        monkeypatch.setattr(
+                cli,
+                "prompt_for_password",
+                lambda: "replacement owner password",
+                )
+        monkeypatch.setattr(
+                cli,
+                "hash_password",
+                lambda _: "replacement-password-hash",
+                )
+
+        with pytest.raises(
+                SystemExit,
+                match=(
+                    "Could not lock the database. Stop DaemonHunter "
+                    "and try again."
+                    ),
+                ):
+            cli.reset_owner_password()
+
+        assert "Owner password reset" not in capsys.readouterr().out
+
+        locking_session.rollback()
+
+    with test_session_factory() as session:
+        saved_owner = session.get(User, owner_id)
+
+        assert saved_owner is not None
+        assert saved_owner.username == original_username
+        assert saved_owner.password_hash == original_password_hash
+        assert saved_owner.session_secret == original_session_secret
+
+
 def test_factory_reset_can_be_cancelled(
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
