@@ -4,6 +4,8 @@ from fastapi import APIRouter, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from daemonhunter.models import User
+
 from daemonhunter.auth import (
         CurrentUser,
         SessionDependency,
@@ -15,7 +17,6 @@ from daemonhunter.auth import (
         verify_password,
         )
 
-from daemonhunter.models import User
 from daemonhunter.schemas import (
         LoginRequest,
         OwnerSetupRequest,
@@ -23,6 +24,8 @@ from daemonhunter.schemas import (
         SetupStatusResponse,
         UserResponse,
         )
+
+from daemonhunter.routers.user_writes import committed_user_write
 
 router = APIRouter(
         prefix="/api/v1/auth",
@@ -148,8 +151,8 @@ def logout(
         session: SessionDependency,
         user: CurrentUser,
         ) -> None:
-    user.session_secret = token_urlsafe(32)
-    session.commit()
+    with committed_user_write(session):
+        user.session_secret = token_urlsafe(32)
 
     clear_session_cookie(response)
 
@@ -172,7 +175,6 @@ def change_password(
         session: SessionDependency,
         user: CurrentUser,
         ) -> User:
-
     current_password = (
             password_data.current_password.get_secret_value()
             )
@@ -198,11 +200,11 @@ def change_password(
                 detail="New password must be different from current password",
                 )
 
-    user.password_hash = hash_password(new_password)
-    user.session_secret = token_urlsafe(32)
-    user.must_change_password = False
+    with committed_user_write(session):
+        user.password_hash = hash_password(new_password)
+        user.session_secret = token_urlsafe(32)
+        user.must_change_password = False
 
-    session.commit()
     session.refresh(user)
     set_session_cookie(response, user)
 
