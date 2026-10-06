@@ -7,6 +7,10 @@ SETUP_TOKEN = (
 OWNER_CREDENTIALS = {
         "username": "owner",
         "password": "correct horse battery staple",
+        }
+
+OWNER_SETUP = {
+        **OWNER_CREDENTIALS,
         "setup_token": SETUP_TOKEN,
         }
 
@@ -25,7 +29,7 @@ def test_reports_setup_status(
 
     setup_response = api_client.post(
             "/api/v1/auth/setup",
-            json=OWNER_CREDENTIALS,
+            json=OWNER_SETUP,
             )
 
     assert setup_response.status_code == 201
@@ -45,7 +49,7 @@ def test_setup_creates_and_logs_in_owner(
         ) -> None:
     response = api_client.post(
             "/api/v1/auth/setup",
-            json=OWNER_CREDENTIALS
+            json=OWNER_SETUP,
             )
 
     assert response.status_code == 201
@@ -75,11 +79,11 @@ def test_rejects_duplicate_owner_setup(
         ) -> None:
     first_response = api_client.post(
             "/api/v1/auth/setup",
-            json=OWNER_CREDENTIALS,
+            json=OWNER_SETUP,
             )
     second_response = api_client.post(
             "/api/v1/auth/setup",
-            json=OWNER_CREDENTIALS,
+            json=OWNER_SETUP,
             )
 
     assert first_response.status_code == 201
@@ -118,7 +122,7 @@ def test_logout_and_login(
         ) -> None:
     setup_response = api_client.post(
             "/api/v1/auth/setup",
-            json=OWNER_CREDENTIALS,
+            json=OWNER_SETUP,
             )
 
     assert setup_response.status_code == 201
@@ -148,10 +152,11 @@ def test_logout_and_login(
 def test_rejects_invalid_login(
         api_client: TestClient
         ) -> None:
-    api_client.post(
+    status_response = api_client.post(
             "/api/v1/auth/setup",
-            json=OWNER_CREDENTIALS
+            json=OWNER_SETUP
             )
+    assert status_response.status_code == 201
 
     api_client.post(
             "/api/v1/auth/logout",
@@ -208,10 +213,11 @@ def test_admin_routes_require_session(
 def test_rejects_tampered_session_cookie(
         api_client: TestClient
         ) -> None:
-    api_client.post(
+    setup_response = api_client.post(
             "/api/v1/auth/setup",
-            json=OWNER_CREDENTIALS,
+            json=OWNER_SETUP
             )
+    assert setup_response.status_code == 201
 
     api_client.cookies.clear()
 
@@ -233,7 +239,7 @@ def test_changes_owner_password(
         ) -> None:
     api_client.post(
             "/api/v1/auth/setup",
-            json=OWNER_CREDENTIALS,
+            json=OWNER_SETUP,
             )
 
     change_response = api_client.post(
@@ -270,7 +276,7 @@ def test_rejects_incorrect_current_password(
         ) -> None:
     api_client.post(
             "/api/v1/auth/setup",
-            json=OWNER_CREDENTIALS,
+            json=OWNER_SETUP,
             )
 
     response = api_client.post(
@@ -291,7 +297,7 @@ def test_rejects_incorrect_current_password(
 def test_rejects_missing_setup_token(
         api_client: TestClient,
         ) -> None:
-    response = api_client.post(
+    setup_response = api_client.post(
             "/api/v1/auth/setup",
             json={
                 "username": "owner",
@@ -299,23 +305,23 @@ def test_rejects_missing_setup_token(
                 },
             )
 
-    assert response.status_code == 422
+    assert setup_response.status_code == 422
 
 
 def test_rejects_invalid_setup_token(
         api_client: TestClient,
         ) -> None:
-    response = api_client.post(
+    setup_response = api_client.post(
             "/api/v1/auth/setup",
             json={
                 "username": "owner",
                 "password": "correct horse battery sample",
-                "setup_token": "invalid-setup-token-1234567890",
+                "setup_token": "invalid-setup-token-12345678901234567890",
                 },
             )
 
-    assert response.status_code == 403
-    assert response.json() == {
+    assert setup_response.status_code == 403
+    assert setup_response.json() == {
             "detail": "Invalid setup token",
             }
 
