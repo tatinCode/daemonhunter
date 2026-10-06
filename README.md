@@ -49,8 +49,21 @@ The API is then available at `http://127.0.0.1:8000`.
 
 ## Database
 
-DaemonHunter uses SQLite by default and creates `daemonhunter.db` in the
-project directory. Local database files are ignored by Git.
+DaemonHunter uses SQLite by default. When `XDG_DATA_HOME` contains an absolute
+path, the database is stored at:
+
+```text
+$XDG_DATA_HOME/daemonhunter/daemonhunter.db
+```
+
+If `XDG_DATA_HOME` is unset, empty, or relative, DaemonHunter falls back to:
+
+```text
+~/.local/share/daemonhunter/daemonhunter.db
+```
+
+DaemonHunter sets the application data directory to mode `0700` and the
+database file to mode `0600`.
 
 The database URL can be overridden through the
 `DAEMONHUNTER_DATABASE_URL` environment variable:
@@ -58,6 +71,36 @@ The database URL can be overridden through the
 ```bash
 DAEMONHUNTER_DATABASE_URL=sqlite:///./custom.db uv run alembic upgrade head
 ```
+
+Explicit database URLs are used unchanged. DaemonHunter does not create their
+parent directories or adjust their permissions.
+
+### Moving an Existing Database
+
+Earlier versions stored `daemonhunter.db` in the project directory. Stop
+DaemonHunter before moving that database. If SQLite `-wal` or `-shm` sidecar
+files exist, move them with the main database:
+
+```bash
+case "${XDG_DATA_HOME:-}" in
+    /*) data_directory="$XDG_DATA_HOME/daemonhunter" ;;
+    *) data_directory="$HOME/.local/share/daemonhunter" ;;
+esac
+
+mkdir -p "$data_directory"
+chmod 700 "$data_directory"
+
+for suffix in "" "-wal" "-shm"; do
+    if [ -e "./daemonhunter.db${suffix}" ]; then
+        mv "./daemonhunter.db${suffix}" \
+            "$data_directory/daemonhunter.db${suffix}"
+        chmod 600 "$data_directory/daemonhunter.db${suffix}"
+    fi
+done
+```
+
+Alternatively, set `DAEMONHUNTER_DATABASE_URL` to an absolute URL pointing to
+the existing database.
 
 After changing a SQLAlchemy model, generate a migration:
 
