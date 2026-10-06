@@ -1,4 +1,18 @@
+import pytest
+from fastapi import HTTPException, Response
 from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.orm import Session, sessionmaker
+
+from daemonhunter.models import User
+from daemonhunter.routers.admin_users import (
+        create_admin,
+        transfer_ownership,
+        )
+from daemonhunter.schemas import (
+        AdminCreateRequest,
+        OwnershipTransferRequest,
+        )
 
 
 OWNER_CREDENTIALS = {
@@ -399,3 +413,128 @@ def test_temporary_password_cannot_be_reused(
     assert admin_client.get(
             "/api/v1/admin/devices"
             ).status_code == 403
+
+
+def test_stale_former_owner_cannot_create_admin(
+        admin_client: TestClient,
+        test_session_factory: sessionmaker[Session],
+        ) -> None:
+    owner_id = admin_client.get("/api/v1/auth/me").json()["id"]
+    target_id = create_secondary_admin(admin_client)["id"]
+
+    with test_session_factory() as stale_session:
+        stale_owner = stale_session.get(User, owner_id)
+
+        assert stale_owner is not None
+        assert stale_owner.role == "owner"
+
+        with test_session_factory() as transfer_session:
+            current_owner = transfer_session.get(User, owner_id)
+            target = transfer_session.get(User, target_id)
+
+            assert current_owner is not None
+            assert target is not None
+
+            current_owner.role = "admin"
+            transfer_session.flush([current_owner])
+            target.role = "owner"
+            transfer_session.commit()
+
+        with pytest.raises(HTTPException) as error:
+            create_admin(
+                    admin_data=AdminCreateRequest(
+                        username="stale-owner-created-admin",
+                        temporary_password="another temporary password",
+                        ),
+                    session=stale_session,
+                    owner=stale_owner,
+                    )
+
+        assert error.value.status_code == 409
+        assert error.value.detail == (
+                "User was modified by another request; reload and retry"
+                )
+
+    with test_session_factory() as session:
+        unauthorized_user = session.scalar(
+                select(User).where(
+                    User.username == "stale-owner-created-admin",
+                    )
+                )
+        owners = list(
+                session.scalars(
+                    select(User).where(User.role == "owner"),
+                    )
+                )
+
+        assert unauthorized_user is None
+        assert [owner.id for owner in owners] == [target_id]
+
+
+def test_stale_transfer_target_rolls_back_owner_demotion(
+        admin_client: TestClient,
+        test_session_factory: sessionmaker[Session],
+        ) -> None:
+    owner_id = admin_client.get("/api/v1/auth/me").json()["id"]
+    target_id = create_secondary_admin(admin_client)["id"]
+
+    with test_session_factory() as session:
+        target = session.get(User, target_id)
+
+        assert target is not None
+
+        target.must_change_password = False
+        session.commit()
+
+    with test_session_factory() as stale_session:
+        stale_owner = stale_session.get(User, owner_id)
+        stale_target = stale_session.get(User, target_id)
+
+        assert stale_owner is not None
+        assert stale_target is not None
+        assert stale_target.active is True
+        assert stale_target.must_change_password is False
+
+        original_owner_secret = stale_owner.session_secret
+
+        with test_session_factory() as concurrent_session:
+            current_target = concurrent_session.get(User, target_id)
+
+            assert current_target is not None
+
+            current_target.active = False
+            concurrent_session.commit()
+
+        with pytest.raises(HTTPException) as error:
+            transfer_ownership(
+                    user_id=target_id,
+                    transfer_data=OwnershipTransferRequest(
+                        current_password=OWNER_CREDENTIALS["password"],
+                        confirm_username=ADMIN_CREDENTIALS["username"],
+                        ),
+                    response=Response(),
+                    session=stale_session,
+                    owner=stale_owner,
+                    )
+
+        assert error.value.status_code == 409
+        assert error.value.detail == (
+                "User was modified by another request; reload and retry"
+                )
+
+    with test_session_factory() as session:
+        saved_owner = session.get(User, owner_id)
+        saved_target = session.get(User, target_id)
+        owners = list(
+                session.scalars(
+                    select(User).where(User.role == "owner"),
+                    )
+                )
+
+        assert saved_owner is not None
+        assert saved_target is not None
+        assert saved_owner.role == "owner"
+        assert saved_owner.session_secret == original_owner_secret
+        assert saved_target.role == "admin"
+        assert saved_target.active is False
+        assert [owner.id for owner in owners] == [owner_id]

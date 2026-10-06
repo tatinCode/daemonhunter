@@ -11,6 +11,9 @@ from fastapi import (
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from daemonhunter.models import User
+from daemonhunter.routers.user_writes import committed_user_write
+
 from daemonhunter.auth import (
         CurrentOwner,
         SessionDependency,
@@ -20,7 +23,6 @@ from daemonhunter.auth import (
         verify_password,
         )
 
-from daemonhunter.models import User
 from daemonhunter.schemas import (
         AdminCreateRequest,
         AdminPasswordResetRequest,
@@ -84,6 +86,7 @@ def get_secondary_admin_or_403(
 def create_admin(
         admin_data: AdminCreateRequest,
         session: SessionDependency,
+        owner: CurrentOwner,
         ) -> User:
     user = User(
             username=admin_data.username,
@@ -95,14 +98,12 @@ def create_admin(
             active=True,
             must_change_password=True,
             )
-    session.add(user)
-
     try:
-        session.commit()
+        with committed_user_write(session):
+            owner.version_id += 1
+            session.add(user)
 
     except IntegrityError as error:
-        session.rollback()
-
         raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="A user with this username already exists",
@@ -144,27 +145,26 @@ def update_admin(
         user_id: int,
         admin_data: AdminUpdateRequest,
         session: SessionDependency,
+        owner: CurrentOwner,
         ) -> User:
     user = get_secondary_admin_or_403(session, user_id)
     update_data = admin_data.model_dump(exclude_unset=True)
 
-    if "username" in update_data:
-        user.username = update_data["username"]
-
-    if "active" in update_data:
-        new_active = update_data["active"]
-
-        if user.active and not new_active:
-            user.session_secret = token_urlsafe(32)
-
-        user.active = new_active
-
     try:
-        session.commit()
+        with committed_user_write(session):
+            owner.version_id += 1
+            if "username" in update_data:
+                user.username = update_data["username"]
+
+            if "active" in update_data:
+                new_active = update_data["active"]
+
+                if user.active and not new_active:
+                    user.session_secret = token_urlsafe(32)
+
+                user.active = new_active
 
     except IntegrityError as error:
-        session.rollback()
-
         raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="A user with this username already exists",
@@ -183,17 +183,19 @@ def reset_admin_password(
         user_id: int,
         password_data: AdminPasswordResetRequest,
         session: SessionDependency,
+        owner: CurrentOwner,
         ) -> User:
     user = get_secondary_admin_or_403(session, user_id)
 
-    user.password_hash = hash_password(
-            password_data.temporary_password.get_secret_value(),
-            )
+    with committed_user_write(session):
+        owner.version_id += 1
+        user.password_hash = hash_password(
+                password_data.temporary_password.get_secret_value(),
+                )
 
-    user.session_secret = token_urlsafe(32)
-    user.must_change_password = True
+        user.session_secret = token_urlsafe(32)
+        user.must_change_password = True
 
-    session.commit()
     session.refresh(user)
 
     return user
@@ -206,11 +208,13 @@ def reset_admin_password(
 def delete_admin(
         user_id: int,
         session: SessionDependency,
+        owner: CurrentOwner,
         ) -> None:
     user = get_secondary_admin_or_403(session, user_id)
 
-    session.delete(user)
-    session.commit()
+    with committed_user_write(session):
+        owner.version_id += 1
+        session.delete(user)
 
 
 @router.post(
@@ -256,21 +260,19 @@ def transfer_ownership(
                 detail="Current password is incorrect",
                 )
 
-    owner.role = "admin"
-    owner.session_secret = token_urlsafe(32)
-
-# needs to flush the demotion first to satisfy the unique-owner index
-    session.flush()
-
-    target.role = "owner"
-    target.session_secret = token_urlsafe(32)
-
     try:
-        session.commit()
+        with committed_user_write(session):
+            owner.role = "admin"
+            owner.session_secret = token_urlsafe(32)
+
+            # needs to flush the demotion first to satisfy the
+            # unique-owner index
+            session.flush([owner])
+
+            target.role = "owner"
+            target.session_secret = token_urlsafe(32)
 
     except IntegrityError as error:
-        session.rollback()
-
         raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Ownership transfer could not be completed",
