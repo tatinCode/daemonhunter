@@ -1,4 +1,7 @@
 import sqlite3
+import stat
+from contextlib import closing
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -408,3 +411,130 @@ def test_application_tables_requires_alembic_revision(
                 match="missing alembic_version",
                 ):
             cli.application_tables(connection)
+
+
+def test_database_backup_matches_source_with_secure_permissions(
+        tmp_path: Path,
+        ) -> None:
+    database_path = tmp_path / "daemonhunter.db"
+    create_factory_reset_database(database_path)
+
+    with closing(sqlite3.connect(database_path)) as connection:
+        tables = cli.application_tables(connection)
+        expected_snapshot = cli.database_snapshot(
+                connection,
+                tables,
+                )
+        backup_path = cli.create_database_backup(
+                connection,
+                database_path,
+                tables,
+                expected_snapshot,
+                )
+
+    backup_uri = f"{backup_path.as_uri()}?mode=ro"
+
+    with closing(sqlite3.connect(
+            backup_uri,
+            uri=True,
+            )) as backup_connection:
+        backup_snapshot = cli.database_snapshot(
+                backup_connection,
+                tables,
+                )
+
+    assert backup_snapshot == expected_snapshot
+    assert stat.S_IMODE(backup_path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(backup_path.parent.stat().st_mode) == 0o700
+
+
+def test_database_backup_includes_committed_wal_rows(
+        tmp_path: Path,
+        ) -> None:
+    database_path = tmp_path / "daemonhunter.db"
+    create_factory_reset_database(database_path)
+
+    with closing(sqlite3.connect(database_path)) as connection:
+        journal_mode = connection.execute(
+                "PRAGMA journal_mode=WAL"
+                ).fetchone()
+        connection.execute("PRAGMA wal_autocheckpoint=0")
+        connection.execute(
+                "INSERT INTO devices VALUES (2, 'wal-device')"
+                )
+        connection.commit()
+
+        assert journal_mode == ("wal",)
+        assert Path(f"{database_path}-wal").exists()
+
+        tables = cli.application_tables(connection)
+        expected_snapshot = cli.database_snapshot(
+                connection,
+                tables,
+                )
+        backup_path = cli.create_database_backup(
+                connection,
+                database_path,
+                tables,
+                expected_snapshot,
+                )
+
+    backup_uri = f"{backup_path.as_uri()}?mode=ro"
+
+    with closing(sqlite3.connect(
+            backup_uri,
+            uri=True,
+            )) as backup_connection:
+        device_names = backup_connection.execute(
+                "SELECT name FROM devices ORDER BY id"
+                ).fetchall()
+
+    assert device_names == [("server",), ("wal-device",)]
+
+
+def test_database_backup_does_not_overwrite_name_collision(
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        ) -> None:
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz: timezone | None = None) -> datetime:
+            return cls(
+                    2026,
+                    10,
+                    7,
+                    12,
+                    30,
+                    tzinfo=timezone.utc,
+                    )
+
+    database_path = tmp_path / "daemonhunter.db"
+    create_factory_reset_database(database_path)
+    monkeypatch.setattr(cli, "datetime", FixedDatetime)
+
+    backup_directory = tmp_path / "backups"
+    backup_directory.mkdir()
+    existing_backup = (
+            backup_directory
+            / "daemonhunter-20261007-123000-000000Z.db"
+            )
+    existing_backup.write_bytes(b"existing backup")
+
+    with closing(sqlite3.connect(database_path)) as connection:
+        tables = cli.application_tables(connection)
+        expected_snapshot = cli.database_snapshot(
+                connection,
+                tables,
+                )
+        backup_path = cli.create_database_backup(
+                connection,
+                database_path,
+                tables,
+                expected_snapshot,
+                )
+
+    assert backup_path.name == (
+            "daemonhunter-20261007-123000-000000Z-1.db"
+            )
+    assert backup_path.exists()
+    assert existing_backup.read_bytes() == b"existing backup"

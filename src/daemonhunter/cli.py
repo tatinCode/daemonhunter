@@ -1,7 +1,9 @@
 import argparse
 import getpass
+import os
 import sqlite3
-from datetime import datetime
+from contextlib import closing
+from datetime import datetime, timezone
 from pathlib import Path
 from secrets import token_urlsafe
 
@@ -221,6 +223,99 @@ def database_snapshot(
             )
 
     return schema, revisions, row_counts
+
+
+def create_database_backup(
+        source_connection: sqlite3.Connection,
+        source_path: Path,
+        tables: list[str],
+        expected_snapshot: tuple,
+        ) -> Path:
+    backup_directory = source_path.parent / "backups"
+
+    backup_directory.mkdir(
+            parents=True,
+            exist_ok=True,
+            mode=0o700,
+            )
+
+    backup_directory.chmod(0o700)
+
+    timestamp = datetime.now(timezone.utc).strftime(
+            "%Y%m%d-%H%M%S-%fZ"
+            )
+
+    collision_number = 0
+
+    while True:
+        collision_suffix = (
+                ""
+                if collision_number == 0
+                else f"-{collision_number}"
+                )
+        backup_path = backup_directory / (
+                f"{source_path.stem}-{timestamp}"
+                f"{collision_suffix}{source_path.suffix}"
+                )
+
+        try:
+            file_descriptor = os.open(
+                    backup_path,
+                    os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                    0o600,
+                    )
+        except FileExistsError:
+            collision_number += 1
+            continue
+
+        os.close(file_descriptor)
+        break
+
+    backup_complete = False
+
+    try:
+        with closing(sqlite3.connect(backup_path)) as backup_connection:
+            source_connection.backup(backup_connection)
+
+        backup_path.chmod(0o600)
+
+        backup_uri = f"{backup_path.as_uri()}?mode=ro"
+
+        with closing(sqlite3.connect(
+                backup_uri,
+                uri=True,
+                )) as backup_connection:
+            check_database_integrity(backup_connection)
+
+            backup_snapshot = database_snapshot(
+                    backup_connection,
+                    tables,
+                    )
+
+        if backup_snapshot != expected_snapshot:
+            raise FactoryResetError(
+                    "Backup does not match the source database"
+                    )
+
+        with backup_path.open("rb") as backup_file:
+            os.fsync(backup_file.fileno())
+
+        directory_descriptor = os.open(
+                backup_directory,
+                os.O_RDONLY,
+                )
+
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
+
+        backup_complete = True
+        return backup_path
+
+    finally:
+        if not backup_complete:
+            backup_path.unlink(missing_ok=True)
 
 
 def factory_reset(no_backup: bool) -> None:
