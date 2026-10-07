@@ -308,3 +308,103 @@ def test_cli_parser_accepts_no_backup_flag() -> None:
             ])
 
     assert arguments.no_backup is True
+
+
+def create_factory_reset_database(
+        database_path: Path,
+        ) -> None:
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+                """
+                CREATE TABLE alembic_version (
+                    version_num VARCHAR(32) NOT NULL
+                )
+                """
+                )
+        connection.execute(
+                """
+                INSERT INTO alembic_version
+                VALUES ('4330f8209266')
+                """
+                )
+        connection.execute(
+                """
+                CREATE TABLE devices (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL
+                )
+                """
+                )
+        connection.execute(
+                """
+                CREATE TABLE users (
+                    id INTEGER PRIMARY KEY,
+                    username TEXT NOT NULL
+                )
+                """
+                )
+        connection.execute(
+                """
+                INSERT INTO devices VALUES (1, 'server')
+                """
+                )
+        connection.execute(
+                """
+                INSERT INTO users VALUES (1, 'owner')
+                """
+                )
+
+
+def test_discovers_application_tables(tmp_path: Path) -> None:
+    database_path = tmp_path / "daemonhunter.db"
+    create_factory_reset_database(database_path)
+
+    with sqlite3.connect(database_path) as connection:
+        tables = cli.application_tables(connection)
+
+    assert tables == ["devices", "users"]
+
+
+def test_database_snapshot_captures_revision_and_row_counts(
+        tmp_path: Path,
+        ) -> None:
+    database_path = tmp_path / "daemonhunter.db"
+    create_factory_reset_database(database_path)
+
+    with sqlite3.connect(database_path) as connection:
+        tables = cli.application_tables(connection)
+        schema, revisions, row_counts = cli.database_snapshot(
+                connection,
+                tables,
+                )
+
+    assert schema
+    assert revisions == (("4330f8209266",),)
+    assert row_counts == (
+            ("devices", 1),
+            ("users", 1),
+            )
+
+
+def test_database_integrity_accepts_valid_database(
+        tmp_path: Path,
+        ) -> None:
+    database_path = tmp_path / "daemonhunter.db"
+    create_factory_reset_database(database_path)
+
+    with sqlite3.connect(database_path) as connection:
+        cli.check_database_integrity(connection)
+
+
+def test_application_tables_requires_alembic_revision(
+        tmp_path: Path,
+        ) -> None:
+    database_path = tmp_path / "daemonhunter.db"
+    create_sqlite_database(database_path)
+
+    with sqlite3.connect(database_path) as connection:
+        with pytest.raises(
+                cli.FactoryResetError,
+                match="missing alembic_version",
+                ):
+            cli.application_tables(connection)

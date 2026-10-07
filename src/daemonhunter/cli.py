@@ -23,6 +23,18 @@ from daemonhunter.database import (
 from daemonhunter.models import User
 
 
+# Helper functions
+class FactoryResetError(Exception):
+    pass
+
+
+def quote_identifier(identifier: str) -> str:
+    escaped_identifier = identifier.replace('\"', '\"\"')
+    return f'"{escaped_identifier}"'
+
+# end of helper functions
+
+
 def prompt_for_password() -> str:
     password = getpass.getpass("New Password: ")
     confirmation = getpass.getpass("Confirm password: ")
@@ -111,6 +123,104 @@ def run_migrations() -> None:
 
     alembic_config = Config(str(config_path))
     command.upgrade(alembic_config, "head")
+
+
+def check_database_integrity(
+        connection: sqlite3.Connection,
+        ) -> None:
+    integrity_rows = connection.execute(
+            "PRAGMA integrity_check"
+            ).fetchall()
+
+    if integrity_rows != [("ok",)]:
+        raise FactoryResetError(
+                "Database integrity check failed"
+                )
+
+    foreign_key_rows = connection.execute(
+            "PRAGMA foreign_key_check"
+            ).fetchall()
+
+    if foreign_key_rows:
+        raise FactoryResetError(
+                "Database contains foreign-key violations"
+                )
+
+
+def application_tables(
+        connection: sqlite3.Connection,
+        ) -> list[str]:
+    table_rows = connection.execute(
+            """
+            SELECT name, sql
+            FROM sqlite_schema
+            WHERE type = 'table'
+            ORDER BY name
+            """
+            ).fetchall()
+
+    table_names: list[str] = []
+
+    if "alembic_version" not in {
+            name for name, _ in table_rows
+            }:
+        raise FactoryResetError(
+                "Database is missing alembic_version"
+                )
+
+    for name, definition in table_rows:
+        if name == "alembic_version" or name.startswith("sqlite_"):
+            continue
+
+        if (
+                definition is not None
+                and "CREATE VIRTUAL TABLE" in definition.upper()
+                ):
+            raise FactoryResetError(
+                    f"Factory reset does not support virtual table: {name}"
+                    )
+        table_names.append(name)
+
+
+    return table_names
+
+
+def database_snapshot(
+        connection: sqlite3.Connection,
+        tables: list[str],
+        ) -> tuple:
+    schema = tuple(
+            connection.execute(
+                """
+                SELECT type, name, tbl_name, sql
+                FROM sqlite_schema
+                WHERE name NOT LIKE 'sqlite_%'
+                ORDER BY type, name
+                """
+                ).fetchall()
+        )
+
+    revisions = tuple(
+            connection.execute(
+                """
+                SELECT version_num
+                FROM alembic_version
+                ORDER BY version_num
+                """
+                ).fetchall()
+            )
+
+    row_counts = tuple(
+            (
+                table,
+                connection.execute(
+                    f"SELECT COUNT(*) FROM {quote_identifier(table)}"
+                    ).fetchone()[0]
+                )
+            for table in tables
+            )
+
+    return schema, revisions, row_counts
 
 
 def factory_reset(no_backup: bool) -> None:
