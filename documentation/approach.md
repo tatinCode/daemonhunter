@@ -10,7 +10,7 @@ registering devices and determining whether they are online.
 1. Backend foundation - complete
 2. Database foundation- complete
 3. Device management API
-4. Admin Authentication and guest visibility 
+4. Admin Authentication and guest visibility - complete
 5. Ping monitoring and status transition loggin
 6. Basic dashboard 
 7. Monitoring agent
@@ -37,6 +37,17 @@ registering devices and determining whether they are online.
 - Create and apply the initial Alembic migration
 - Test device persistence with a temporary database
 
+### Admin Authentication
+
+- Require a first-run setup token before the owner account can be created
+- Hash owner and admin passwords with Argon2
+- Issue a signed, per-user session cookie on setup and login
+- Revoke sessions on logout by rotating the per-user session secret
+- Reject reused passwords and stale writes with per-row version checks
+- Support owner password reset, admin password reset, and ownership transfer
+- Add a factory-reset command that clears application data while preserving
+  the database schema
+
 
 ## Current Milestone
 
@@ -56,7 +67,6 @@ registering devices and determining whether they are online.
 
 #### Out of Scope
 
-- Authentication and authorization
 - Ping and port monitoring
 - Monitoring agents
 - Metrics ingestion

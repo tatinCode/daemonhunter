@@ -1,5 +1,13 @@
-fastapi
+# Runtime dependencies, mirroring pyproject.toml [project].dependencies
+alembic>=1.20.0
+fastapi[standard]>=0.141.1
+itsdangerous>=2.2.0
+pwdlib[argon2]>=0.3.0
+sqlalchemy>=2.0.52
+
+# Runtime server and test client, both provided by fastapi[standard]
 uvicorn
-sqlalchemy
-pytest
 httpx
+
+# Development dependencies, mirroring pyproject.toml [dependency-groups].dev
+pytest>=9.1.1
