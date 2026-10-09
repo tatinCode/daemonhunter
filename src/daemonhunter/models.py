@@ -2,6 +2,7 @@ from datetime import datetime
 
 from sqlalchemy import (
         Boolean,
+        Integer,
         CheckConstraint,
         DateTime,
         Index,
@@ -32,6 +33,18 @@ class User(Base):
             )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+
+    version_id: Mapped[int] = mapped_column(
+            Integer,
+            default=1,
+            server_default=text("1"),
+            nullable=False,
+            )
+
+    __mapper_args__ = {
+            "version_id_col": version_id,
+            }
+
     username: Mapped[str] = mapped_column(
             String(100),
             unique=True,

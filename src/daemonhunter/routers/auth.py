@@ -1,12 +1,15 @@
-from secrets import token_urlsafe
+from secrets import token_urlsafe, compare_digest
 
 from fastapi import APIRouter, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from daemonhunter.models import User
+
 from daemonhunter.auth import (
         CurrentUser,
         SessionDependency,
+        SetupTokenDependency,
         authenticate_user,
         clear_session_cookie,
         hash_password,
@@ -14,7 +17,6 @@ from daemonhunter.auth import (
         verify_password,
         )
 
-from daemonhunter.models import User
 from daemonhunter.schemas import (
         LoginRequest,
         OwnerSetupRequest,
@@ -22,6 +24,8 @@ from daemonhunter.schemas import (
         SetupStatusResponse,
         UserResponse,
         )
+
+from daemonhunter.routers.user_writes import committed_user_write
 
 router = APIRouter(
         prefix="/api/v1/auth",
@@ -66,11 +70,21 @@ def setup_owner(
         owner_data: OwnerSetupRequest,
         response: Response,
         session: SessionDependency,
+        expected_setup_token: SetupTokenDependency,
         ) -> User:
     if get_owner(session) is not None:
         raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Owner account already configured",
+                )
+
+    if not compare_digest(
+            owner_data.setup_token.get_secret_value(),
+            expected_setup_token
+            ):
+        raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid setup token",
                 )
 
     owner = User(
@@ -84,12 +98,11 @@ def setup_owner(
             must_change_password=False,
             )
 
-    session.add(owner)
-
     try:
-        session.commit()
+        with committed_user_write(session):
+            session.add(owner)
+
     except IntegrityError as error:
-        session.rollback()
         raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Owner account already configured",
@@ -132,7 +145,14 @@ def login(
         "/logout",
         status_code=status.HTTP_204_NO_CONTENT,
         )
-def logout(response: Response) -> None:
+def logout(
+        response: Response,
+        session: SessionDependency,
+        user: CurrentUser,
+        ) -> None:
+    with committed_user_write(session):
+        user.session_secret = token_urlsafe(32)
+
     clear_session_cookie(response)
 
 
@@ -154,9 +174,15 @@ def change_password(
         session: SessionDependency,
         user: CurrentUser,
         ) -> User:
+    current_password = (
+            password_data.current_password.get_secret_value()
+            )
+    new_password = (
+            password_data.new_password.get_secret_value()
+            )
 
     if not verify_password(
-            password_data.current_password.get_secret_value(),
+            current_password,
             user.password_hash,
             ):
         raise HTTPException(
@@ -164,13 +190,20 @@ def change_password(
                 detail="Current password is incorrect",
                 )
 
-    user.password_hash = hash_password(
-            password_data.new_password.get_secret_value(),
-            )
-    user.session_secret = token_urlsafe(32)
-    user.must_change_password = False
+    if verify_password(
+            new_password,
+            user.password_hash,
+            ):
+        raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="New password must be different from current password",
+                )
 
-    session.commit()
+    with committed_user_write(session):
+        user.password_hash = hash_password(new_password)
+        user.session_secret = token_urlsafe(32)
+        user.must_change_password = False
+
     session.refresh(user)
     set_session_cookie(response, user)
 

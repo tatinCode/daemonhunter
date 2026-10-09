@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -23,8 +23,10 @@ SessionDependency = Annotated[Session, Depends(get_session)]
         response_model=list[PublicDeviceResponse],
         )
 def list_public_devices(
+        response: Response,
         session: SessionDependency,
         ) -> list[Device]:
+    response.headers["Cache-Control"] = "no-store"
     statement = (
             select(Device)
             .where(Device.guest_visible.is_(True))
@@ -41,7 +43,9 @@ def list_public_devices(
 def retrieve_public_device(
         device_id: int,
         session: SessionDependency,
+        response: Response,
         ) -> Device:
+    response.headers["Cache-Control"] = "no-store"
     statement = select(Device).where(
             Device.id == device_id,
             Device.guest_visible.is_(True),
@@ -53,6 +57,7 @@ def retrieve_public_device(
         raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Device not found",
+                headers={"Cache-Control": "no-store"},
                 )
 
     return device

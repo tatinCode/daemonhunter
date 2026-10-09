@@ -1,8 +1,20 @@
+import pytest
 from fastapi.testclient import TestClient
+
+import daemonhunter.auth as auth
+
+SETUP_TOKEN = (
+                "daemonhunter-test-setup-token-1234567890"
+                )
 
 OWNER_CREDENTIALS = {
         "username": "owner",
         "password": "correct horse battery staple",
+        }
+
+OWNER_SETUP = {
+        **OWNER_CREDENTIALS,
+        "setup_token": SETUP_TOKEN,
         }
 
 
@@ -20,7 +32,7 @@ def test_reports_setup_status(
 
     setup_response = api_client.post(
             "/api/v1/auth/setup",
-            json=OWNER_CREDENTIALS,
+            json=OWNER_SETUP,
             )
 
     assert setup_response.status_code == 201
@@ -40,7 +52,7 @@ def test_setup_creates_and_logs_in_owner(
         ) -> None:
     response = api_client.post(
             "/api/v1/auth/setup",
-            json=OWNER_CREDENTIALS
+            json=OWNER_SETUP,
             )
 
     assert response.status_code == 201
@@ -70,11 +82,11 @@ def test_rejects_duplicate_owner_setup(
         ) -> None:
     first_response = api_client.post(
             "/api/v1/auth/setup",
-            json=OWNER_CREDENTIALS,
+            json=OWNER_SETUP,
             )
     second_response = api_client.post(
             "/api/v1/auth/setup",
-            json=OWNER_CREDENTIALS,
+            json=OWNER_SETUP,
             )
 
     assert first_response.status_code == 201
@@ -93,6 +105,7 @@ def test_rejects_short_owner_password(
             json={
                 "username": "owner",
                 "password": "short",
+                "setup_token": SETUP_TOKEN,
                 },
             )
 
@@ -112,7 +125,7 @@ def test_logout_and_login(
         ) -> None:
     setup_response = api_client.post(
             "/api/v1/auth/setup",
-            json=OWNER_CREDENTIALS,
+            json=OWNER_SETUP,
             )
 
     assert setup_response.status_code == 201
@@ -142,10 +155,11 @@ def test_logout_and_login(
 def test_rejects_invalid_login(
         api_client: TestClient
         ) -> None:
-    api_client.post(
+    status_response = api_client.post(
             "/api/v1/auth/setup",
-            json=OWNER_CREDENTIALS
+            json=OWNER_SETUP
             )
+    assert status_response.status_code == 201
 
     api_client.post(
             "/api/v1/auth/logout",
@@ -202,10 +216,11 @@ def test_admin_routes_require_session(
 def test_rejects_tampered_session_cookie(
         api_client: TestClient
         ) -> None:
-    api_client.post(
+    setup_response = api_client.post(
             "/api/v1/auth/setup",
-            json=OWNER_CREDENTIALS,
+            json=OWNER_SETUP
             )
+    assert setup_response.status_code == 201
 
     api_client.cookies.clear()
 
@@ -227,7 +242,7 @@ def test_changes_owner_password(
         ) -> None:
     api_client.post(
             "/api/v1/auth/setup",
-            json=OWNER_CREDENTIALS,
+            json=OWNER_SETUP,
             )
 
     change_response = api_client.post(
@@ -264,7 +279,7 @@ def test_rejects_incorrect_current_password(
         ) -> None:
     api_client.post(
             "/api/v1/auth/setup",
-            json=OWNER_CREDENTIALS,
+            json=OWNER_SETUP,
             )
 
     response = api_client.post(
@@ -280,3 +295,187 @@ def test_rejects_incorrect_current_password(
             "detail": "Current password is incorrect",
             }
     assert api_client.get("/api/v1/auth/me").status_code == 200
+
+
+def test_rejects_missing_setup_token(
+        api_client: TestClient,
+        ) -> None:
+    setup_response = api_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "username": "owner",
+                "password": "correct horse battery sample",
+                },
+            )
+
+    assert setup_response.status_code == 422
+
+
+def test_rejects_invalid_setup_token(
+        api_client: TestClient,
+        ) -> None:
+    setup_response = api_client.post(
+            "/api/v1/auth/setup",
+            json={
+                "username": "owner",
+                "password": "correct horse battery sample",
+                "setup_token": "invalid-setup-token-12345678901234567890",
+                },
+            )
+
+    assert setup_response.status_code == 403
+    assert setup_response.json() == {
+            "detail": "Invalid setup token",
+            }
+
+    setup_status = api_client.get(
+            "/api/v1/auth/setup-status",
+            )
+
+    assert setup_status.json() == {
+            "setup_required": True,
+            }
+
+
+def test_rejects_reused_owner_password(
+        api_client: TestClient,
+        ) -> None:
+    setup_response = api_client.post(
+            "/api/v1/auth/setup",
+            json=OWNER_SETUP,
+            )
+    assert setup_response.status_code == 201
+
+    response = api_client.post(
+            "/api/v1/auth/change-password",
+            json={
+                "current_password": OWNER_CREDENTIALS["password"],
+                "new_password": OWNER_CREDENTIALS["password"],
+                },
+            )
+
+    assert response.status_code == 400
+    assert response.json() == {
+            "detail": (
+                "New password must be different from current password"
+                ),
+            }
+    assert api_client.get("/api/v1/auth/me").status_code == 200
+
+
+def test_logout_revokes_copied_session(
+        api_client: TestClient,
+        secondary_client: TestClient,
+        ) -> None:
+    setup_response = api_client.post(
+            "/api/v1/auth/setup",
+            json=OWNER_SETUP,
+            )
+    assert setup_response.status_code == 201
+
+    session_cookie = api_client.cookies.get(
+            "daemonhunter_session"
+            )
+    assert session_cookie is not None
+
+    copied_cookie = {
+            "Cookie": (
+                f"daemonhunter_session={session_cookie}"
+                ),
+            }
+
+    assert secondary_client.get(
+            "/api/v1/auth/me",
+            headers=copied_cookie,
+            ).status_code == 200
+
+    logout_response = api_client.post(
+            "/api/v1/auth/logout"
+            )
+
+    assert logout_response.status_code == 204
+    assert api_client.get(
+            "/api/v1/auth/me"
+            ).status_code == 401
+    assert secondary_client.get(
+            "/api/v1/auth/me",
+            headers=copied_cookie,
+            ).status_code == 401
+
+
+def test_logout_requires_authentication(
+        api_client: TestClient,
+        ) -> None:
+    response = api_client.post("/api/v1/auth/logout")
+
+    assert response.status_code == 401
+    assert response.json() == {
+            "detail": "Authentication Required",
+            }
+
+
+def parse_cookie_attributes(cookie_header: str) -> set[str]:
+    return {part.strip() for part in cookie_header.split(";")}
+
+
+def test_setup_session_cookie_sets_security_attributes(
+        api_client: TestClient,
+        ) -> None:
+    response = api_client.post(
+            "/api/v1/auth/setup",
+            json=OWNER_SETUP,
+            )
+
+    assert response.status_code == 201
+
+    cookie_header = response.headers["set-cookie"]
+    attributes = parse_cookie_attributes(cookie_header)
+
+    assert cookie_header.startswith("daemonhunter_session=")
+    assert {
+            "HttpOnly",
+            "Max-Age=1209600",
+            "Path=/",
+            "SameSite=lax",
+            } <= attributes
+    assert "Secure" not in attributes
+
+
+def test_session_cookie_sets_secure_attribute_when_configured(
+        api_client: TestClient,
+        monkeypatch: pytest.MonkeyPatch,
+        ) -> None:
+    monkeypatch.setattr(auth, "COOKIE_SECURE", True)
+
+    response = api_client.post(
+            "/api/v1/auth/setup",
+            json=OWNER_SETUP,
+            )
+
+    assert response.status_code == 201
+
+    attributes = parse_cookie_attributes(
+            response.headers["set-cookie"],
+            )
+
+    assert "Secure" in attributes
+
+
+def test_logout_cookie_clears_session_with_security_attributes(
+        admin_client: TestClient,
+        ) -> None:
+    response = admin_client.post("/api/v1/auth/logout")
+
+    assert response.status_code == 204
+
+    cookie_header = response.headers["set-cookie"]
+    attributes = parse_cookie_attributes(cookie_header)
+
+    assert cookie_header.startswith('daemonhunter_session=""')
+    assert {
+            "HttpOnly",
+            "Max-Age=0",
+            "Path=/",
+            "SameSite=lax",
+            } <= attributes
+    assert "Secure" not in attributes
