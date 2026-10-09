@@ -34,6 +34,34 @@ def quote_identifier(identifier: str) -> str:
     escaped_identifier = identifier.replace('\"', '\"\"')
     return f'"{escaped_identifier}"'
 
+
+def open_database_for_reset(db_path: Path) -> sqlite3.Connection:
+    if not db_path.exists():
+        raise SystemExit("Database file not found")
+    if not db_path.is_file():
+        raise SystemExit("Factory reset requires a regular database file")
+
+    connection = sqlite3.connect(
+            db_path.as_uri(),
+            uri=True,
+            isolation_level=None,
+            timeout=5.0,
+            )
+
+    connection.execute("PRAGMA foreign_keys=ON")
+
+    journal_mode = connection.execute(
+            "PRAGMA journal_mode",
+            )
+
+    if journal_mode == "off":
+        connection.close()
+        raise FactoryResetError(
+                "Factory reset requires SQLite journaling"
+                )
+
+    return connection
+
 # end of helper functions
 
 
