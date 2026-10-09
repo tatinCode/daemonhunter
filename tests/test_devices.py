@@ -85,3 +85,40 @@ def test_hidden_device_detail_returns_not_found(
             "host": "192.168.1.11",
             "status": "unknown",
             }
+
+
+def test_public_device_list_disables_caching(
+        api_client: TestClient,
+        ) -> None:
+    response = api_client.get("/api/v1/devices")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_public_device_detail_disables_caching(
+        admin_client: TestClient,
+        ) -> None:
+    device = admin_client.post(
+            "/api/v1/admin/devices",
+            json={
+                "name": "Visible Pi",
+                "host": "192.168.1.11",
+                "guest_visible": True,
+                },
+            ).json()
+
+    admin_client.post("/api/v1/auth/logout")
+    response = admin_client.get(f"/api/v1/devices/{device['id']}")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_public_device_not_found_disables_caching(
+        api_client: TestClient,
+        ) -> None:
+    response = api_client.get("/api/v1/devices/999999")
+
+    assert response.status_code == 404
+    assert response.headers["cache-control"] == "no-store"
