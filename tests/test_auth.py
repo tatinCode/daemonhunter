@@ -1,4 +1,7 @@
+import pytest
 from fastapi.testclient import TestClient
+
+import daemonhunter.auth as auth
 
 SETUP_TOKEN = (
                 "daemonhunter-test-setup-token-1234567890"
@@ -409,3 +412,70 @@ def test_logout_requires_authentication(
     assert response.json() == {
             "detail": "Authentication Required",
             }
+
+
+def parse_cookie_attributes(cookie_header: str) -> set[str]:
+    return {part.strip() for part in cookie_header.split(";")}
+
+
+def test_setup_session_cookie_sets_security_attributes(
+        api_client: TestClient,
+        ) -> None:
+    response = api_client.post(
+            "/api/v1/auth/setup",
+            json=OWNER_SETUP,
+            )
+
+    assert response.status_code == 201
+
+    cookie_header = response.headers["set-cookie"]
+    attributes = parse_cookie_attributes(cookie_header)
+
+    assert cookie_header.startswith("daemonhunter_session=")
+    assert {
+            "HttpOnly",
+            "Max-Age=1209600",
+            "Path=/",
+            "SameSite=lax",
+            } <= attributes
+    assert "Secure" not in attributes
+
+
+def test_session_cookie_sets_secure_attribute_when_configured(
+        api_client: TestClient,
+        monkeypatch: pytest.MonkeyPatch,
+        ) -> None:
+    monkeypatch.setattr(auth, "COOKIE_SECURE", True)
+
+    response = api_client.post(
+            "/api/v1/auth/setup",
+            json=OWNER_SETUP,
+            )
+
+    assert response.status_code == 201
+
+    attributes = parse_cookie_attributes(
+            response.headers["set-cookie"],
+            )
+
+    assert "Secure" in attributes
+
+
+def test_logout_cookie_clears_session_with_security_attributes(
+        admin_client: TestClient,
+        ) -> None:
+    response = admin_client.post("/api/v1/auth/logout")
+
+    assert response.status_code == 204
+
+    cookie_header = response.headers["set-cookie"]
+    attributes = parse_cookie_attributes(cookie_header)
+
+    assert cookie_header.startswith('daemonhunter_session=""')
+    assert {
+            "HttpOnly",
+            "Max-Age=0",
+            "Path=/",
+            "SameSite=lax",
+            } <= attributes
+    assert "Secure" not in attributes
