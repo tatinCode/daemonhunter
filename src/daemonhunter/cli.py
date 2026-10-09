@@ -7,8 +7,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from secrets import token_urlsafe
 
-from alembic import command
-from alembic.config import Config
 from sqlalchemy import select
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
@@ -26,6 +24,8 @@ from daemonhunter.models import User
 
 
 # Helper functions
+
+
 class FactoryResetError(Exception):
     pass
 
@@ -48,11 +48,29 @@ def open_database_for_reset(db_path: Path) -> sqlite3.Connection:
             timeout=5.0,
             )
 
+    # KNOWN GAP: if either PRAGMA below raises, `connection` is never
+    # returned, so factory_reset's `connection = ...` assignment never
+    # completes and its `finally: connection.close()` cannot reach it.
+    # Today that costs nothing — factory_reset turns the error into
+    # SystemExit, main() does not catch it, and the process exits — but
+    # the handle is never explicitly released.
+    #
+    # Fix idea: split creation from validation so the assignment always
+    # completes before anything can fail:
+    #     connection = open_database_for_reset(db_path)  # connect only
+    #     validate_database_for_reset(connection)        # run PRAGMAs
+    #
+    # Hard to test: sqlite3.Connection is a C type with no __dict__, so
+    # `connection.close = ...` raises AttributeError ("attribute 'close'
+    # is read-only") and the connection is unreachable from outside. The
+    # alternatives (counting /proc/self/fd, probing file locks, or a
+    # forwarding proxy for a patched sqlite3.connect) are all worse than
+    # the bug.
     connection.execute("PRAGMA foreign_keys=ON")
 
     journal_mode = connection.execute(
             "PRAGMA journal_mode",
-            )
+            ).fetchone()[0]
 
     if journal_mode == "off":
         connection.close()
@@ -61,6 +79,21 @@ def open_database_for_reset(db_path: Path) -> sqlite3.Connection:
                 )
 
     return connection
+
+
+def is_sqlite_lock_error(error: sqlite3.OperationalError) -> bool:
+    code = getattr(error, "sqlite_errorcode", None)
+
+    if isinstance(code, int) and (code & 0xFF) in (
+            sqlite3.SQLITE_BUSY,
+            sqlite3.SQLITE_LOCKED,
+            ):
+        return True
+
+    message = str(error).lower()
+
+    return "locked" in message
+
 
 # end of helper functions
 
@@ -142,19 +175,6 @@ def database_path() -> Path:
     return Path(url.database).resolve()
 
 
-def run_migrations() -> None:
-    config_path = Path("alembic.ini").resolve()
-
-    if not config_path.exists():
-        raise SystemExit(
-                "alembic.ini was not found. Run this command from "
-                "the Daemonhunter project directory."
-                )
-
-    alembic_config = Config(str(config_path))
-    command.upgrade(alembic_config, "head")
-
-
 def check_database_integrity(
         connection: sqlite3.Connection,
         ) -> None:
@@ -210,7 +230,6 @@ def application_tables(
                     f"Factory reset does not support virtual table: {name}"
                     )
         table_names.append(name)
-
 
     return table_names
 
@@ -391,54 +410,86 @@ def clear_application_data(
 def factory_reset(no_backup: bool) -> None:
     db_path = database_path()
 
+    expected_confirmation = (
+            "RESET DAEMONHUNTER WITHOUT BACKUP"
+            if no_backup
+            else "RESET DAEMONHUNTER"
+            )
+
     print("Stop DaemonHunter before continuing.")
     print("This deletes every user, device, setting, and log.")
 
-    confirmation = input(
-            "Type RESET DAEMONHUNTER to continue: "
-            )
+    prompt = f"Type {expected_confirmation} to continue: "
 
-    if confirmation != "RESET DAEMONHUNTER":
+    if input(prompt) != expected_confirmation:
         raise SystemExit("Factory reset cancelled")
 
     engine.dispose()
 
-    if db_path.exists():
-        try:
-            with sqlite3.connect(db_path) as connection:
-                connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    connection = None
+    backup_path = None
 
-        except sqlite3.OperationalError as error:
-            raise SystemExit(
-                    "Could not lock the database. Stop DaemonHunter "
-                    "and try again."
-                    ) from error
+    try:
+        connection = open_database_for_reset(db_path)
+        check_database_integrity(connection)
 
-        if no_backup:
-            db_path.unlink()
+        tables = application_tables(connection)
+        expected_snapshot = database_snapshot(connection, tables)
+        data_version_before = connection.execute(
+                "PRAGMA data_version"
+                ).fetchone()[0]
 
-        else:
-            backup_directory = db_path.parent / "backups"
-            backup_directory.mkdir(
-                    parents=True,
-                    exist_ok=True,
+        if not no_backup:
+            backup_path = create_database_backup(
+                    connection,
+                    db_path,
+                    tables,
+                    expected_snapshot,
                     )
-            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-            backup_path = (
-                    backup_directory
-                    / f"{db_path.stem}-{timestamp}{db_path.suffix}"
-                    )
-            db_path.replace(backup_path)
 
-            backup_path.chmod(0o600)
+        connection.execute("BEGIN EXCLUSIVE")
 
-            print(f"Backup created: {backup_path}")
+        if not no_backup:
+            data_version_after = connection.execute(
+                    "PRAGMA data_version"
+                    ).fetchone()[0]
 
-    for suffix in ("-wal", "-shm"):
-        sidecar = Path(f"{db_path}{suffix}")
-        sidecar.unlink(missing_ok=True)
+            if data_version_after != data_version_before:
+                raise FactoryResetError(
+                        "Database changed during backup. Try again."
+                        )
 
-    run_migrations()
+        clear_application_data(
+                connection,
+                tables,
+                expected_snapshot,
+                )
+
+        connection.commit()
+
+    except FactoryResetError as error:
+        if connection is not None and connection.in_transaction:
+            connection.rollback()
+
+        raise SystemExit(str(error)) from error
+
+    except sqlite3.OperationalError as error:
+        if connection is not None and connection.in_transaction:
+            connection.rollback()
+
+        if not is_sqlite_lock_error(error):
+            raise
+
+        raise SystemExit(
+                "Could not lock the database. Stop DaemonHunter "
+                "and try again."
+                ) from error
+    finally:
+        if connection is not None:
+            connection.close()
+
+    if backup_path is not None:
+        print(f"Backup created: {backup_path}")
 
     print("Factory reset complete.")
     print("Start DaemonHunter and complete the first-run setup.")
@@ -468,7 +519,7 @@ def build_parser() -> argparse.ArgumentParser:
     factory_reset_parser.add_argument(
             "--no-backup",
             action="store_true",
-            help="Permanently delete the database without a backup",
+            help="Reset the database without a backup",
             )
     factory_reset_parser.set_defaults(
             handler=lambda args: factory_reset(args.no_backup)
