@@ -318,6 +318,48 @@ def create_database_backup(
             backup_path.unlink(missing_ok=True)
 
 
+def clear_application_data(
+        connection: sqlite3.Connection,
+        tables: list[str],
+        expected_snapshot: tuple,
+        ) -> None:
+    if not connection.in_transaction:
+        raise FactoryResetError(
+                "Factory reset requires an active transaction"
+                )
+
+    expected_schema, expected_revisions, _ = expected_snapshot
+
+    connection.execute("PRAGMA defer_foreign_keys=ON")
+
+    for table in tables:
+        connection.execute(
+                f"DELETE FROM {quote_identifier(table)}"
+                )
+
+    check_database_integrity(connection)
+
+    schema, revisions, row_counts = database_snapshot(
+            connection,
+            tables,
+            )
+
+    if schema != expected_schema:
+        raise FactoryResetError(
+                "Database schema changed during factory reset"
+                )
+
+    if revisions != expected_revisions:
+        raise FactoryResetError(
+                "Database revision changed during factory reset"
+                )
+
+    if any(row_count != 0 for _, row_count in row_counts):
+        raise FactoryResetError(
+                "Factory reset did not remove all application data"
+                )
+
+
 def factory_reset(no_backup: bool) -> None:
     db_path = database_path()
 

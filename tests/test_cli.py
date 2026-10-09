@@ -538,3 +538,102 @@ def test_database_backup_does_not_overwrite_name_collision(
             )
     assert backup_path.exists()
     assert existing_backup.read_bytes() == b"existing backup"
+
+
+def test_clear_application_data_commits_and_empties_tables(
+        tmp_path: Path,
+        ) -> None:
+    database_path = tmp_path / "daemonhunter.db"
+    create_factory_reset_database(database_path)
+
+    with closing(sqlite3.connect(database_path)) as connection:
+        connection.execute("PRAGMA foreign_keys=ON")
+        tables = cli.application_tables(connection)
+        expected_snapshot = cli.database_snapshot(connection, tables)
+
+        connection.execute("BEGIN EXCLUSIVE")
+        cli.clear_application_data(connection, tables, expected_snapshot)
+        connection.commit()
+
+        schema, revisions, row_counts = cli.database_snapshot(
+                connection,
+                tables,
+                )
+
+    assert row_counts == (("devices", 0), ("users", 0))
+    assert schema == expected_snapshot[0]
+    assert revisions == expected_snapshot[1]
+
+
+def test_clear_application_data_requires_active_transaction(
+        tmp_path: Path,
+        ) -> None:
+    database_path = tmp_path / "daemonhunter.db"
+    create_factory_reset_database(database_path)
+
+    with closing(sqlite3.connect(database_path)) as connection:
+        tables = cli.application_tables(connection)
+        expected_snapshot = cli.database_snapshot(connection, tables)
+
+        with pytest.raises(
+                cli.FactoryResetError,
+                match="requires an active transaction",
+                ):
+            cli.clear_application_data(
+                    connection,
+                    tables,
+                    expected_snapshot,
+                    )
+
+
+def test_clear_application_data_rolls_back_on_failure(
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        ) -> None:
+    database_path = tmp_path / "daemonhunter.db"
+    create_factory_reset_database(database_path)
+
+    counts_during_failure: list[tuple[int, int]] = []
+
+    def failing_integrity(connection: sqlite3.Connection) -> None:
+        device_count = connection.execute(
+                "SELECT COUNT(*) FROM devices"
+                ).fetchone()[0]
+        user_count = connection.execute(
+                "SELECT COUNT(*) FROM users"
+                ).fetchone()[0]
+        counts_during_failure.append((device_count, user_count))
+
+        raise cli.FactoryResetError("injected integrity failure")
+
+    monkeypatch.setattr(cli, "check_database_integrity", failing_integrity)
+
+    with closing(sqlite3.connect(database_path)) as connection:
+        connection.execute("PRAGMA foreign_keys=ON")
+        tables = cli.application_tables(connection)
+        expected_snapshot = cli.database_snapshot(connection, tables)
+
+        connection.execute("BEGIN EXCLUSIVE")
+
+        with pytest.raises(
+                cli.FactoryResetError,
+                match="injected integrity failure",
+                ):
+            cli.clear_application_data(
+                    connection,
+                    tables,
+                    expected_snapshot,
+                    )
+
+        assert counts_during_failure == [(0, 0)]
+
+        connection.rollback()
+
+    with closing(sqlite3.connect(database_path)) as connection:
+        _, revisions, row_counts = cli.database_snapshot(
+                connection,
+                tables,
+                )
+
+    assert row_counts == (("devices", 1), ("users", 1))
+    assert revisions == (("4330f8209266",),)
