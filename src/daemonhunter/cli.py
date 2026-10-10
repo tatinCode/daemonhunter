@@ -48,24 +48,10 @@ def open_database_for_reset(db_path: Path) -> sqlite3.Connection:
             timeout=5.0,
             )
 
-    # KNOWN GAP: if either PRAGMA below raises, `connection` is never
-    # returned, so factory_reset's `connection = ...` assignment never
-    # completes and its `finally: connection.close()` cannot reach it.
-    # Today that costs nothing — factory_reset turns the error into
-    # SystemExit, main() does not catch it, and the process exits — but
-    # the handle is never explicitly released.
-    #
-    # Fix idea: split creation from validation so the assignment always
-    # completes before anything can fail:
-    #     connection = open_database_for_reset(db_path)  # connect only
-    #     validate_database_for_reset(connection)        # run PRAGMAs
-    #
-    # Hard to test: sqlite3.Connection is a C type with no __dict__, so
-    # `connection.close = ...` raises AttributeError ("attribute 'close'
-    # is read-only") and the connection is unreachable from outside. The
-    # alternatives (counting /proc/self/fd, probing file locks, or a
-    # forwarding proxy for a patched sqlite3.connect) are all worse than
-    # the bug.
+    return connection
+
+
+def validate_database_for_reset(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA foreign_keys=ON")
 
     journal_mode = connection.execute(
@@ -73,12 +59,9 @@ def open_database_for_reset(db_path: Path) -> sqlite3.Connection:
             ).fetchone()[0]
 
     if journal_mode == "off":
-        connection.close()
         raise FactoryResetError(
-                "Factory reset requires SQLite journaling"
+                "Factory reset requires SQLite journaling",
                 )
-
-    return connection
 
 
 def is_sqlite_lock_error(error: sqlite3.OperationalError) -> bool:
@@ -417,7 +400,7 @@ def factory_reset(no_backup: bool) -> None:
             )
 
     print("Stop DaemonHunter before continuing.")
-    print("This deletes every user, device, setting, and log.")
+    print("This deletes every user and device.")
 
     prompt = f"Type {expected_confirmation} to continue: "
 
@@ -431,6 +414,7 @@ def factory_reset(no_backup: bool) -> None:
 
     try:
         connection = open_database_for_reset(db_path)
+        validate_database_for_reset(connection)
         check_database_integrity(connection)
 
         tables = application_tables(connection)
