@@ -1,4 +1,5 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
+from starlette.middleware.base import RequestResponseEndpoint
 
 from daemonhunter.routers.admin_users import router as admin_users_router
 from daemonhunter.routers.admin_devices import router as admin_devices_router
@@ -56,6 +57,21 @@ def create_app() -> FastAPI:
                 status="ok",
                 service="daemonhunter",
                 )
+
+    @app.middleware("http")
+    async def no_store_private_api(
+            request: Request,
+            call_text: RequestResponseEndpoint,
+            ) -> Response:
+        response = await call_text(request)
+
+        if request.url.path.startswith(
+                ("/api/v1/auth/", "/api/v1/admin/")
+                ):
+            response.headers["Cache-Control"] = "no-store"
+
+        return response
+
     return app
 
 
