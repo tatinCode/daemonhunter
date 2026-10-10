@@ -14,6 +14,7 @@ os.environ["DAEMONHUNTER_DATABASE_URL"] = "sqlite:///:memory:"
 from daemonhunter.database import Base, get_session
 from daemonhunter.main import app
 from daemonhunter.auth import get_setup_token
+from daemonhunter.rate_limit import login_limiter, setup_limiter
 
 
 TEST_SETUP_TOKEN = (
@@ -43,6 +44,8 @@ def test_session_factory(
 def api_client(
         test_session_factory: sessionmaker[Session],
         ) -> Generator[TestClient, None, None]:
+    login_limiter.reset()
+    setup_limiter.reset()
 
     def override_get_session() -> Generator[Session, None, None]:
         with test_session_factory() as session:
@@ -57,6 +60,8 @@ def api_client(
         yield client
 
     app.dependency_overrides.clear()
+    login_limiter.reset()
+    setup_limiter.reset()
 
 
 @pytest.fixture
