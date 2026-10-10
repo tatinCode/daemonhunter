@@ -773,6 +773,67 @@ def test_factory_reset_rejects_database_with_journaling_disabled(
     assert not (tmp_path / "backups").exists()
 
 
+@pytest.mark.parametrize(
+        "failed_pragma",
+        ["PRAGMA foreign_keys=ON", "PRAGMA journal_mode"],
+        )
+def test_factory_reset_closes_connection_when_validation_raises(
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        failed_pragma: str,
+        ) -> None:
+    database_path = tmp_path / "daemonhunter.db"
+    create_factory_reset_database(database_path)
+    replace_cli_database(monkeypatch, database_path)
+
+    opened: list[sqlite3.Connection] = []
+    closed: list[sqlite3.Connection] = []
+    real_connect = sqlite3.connect
+
+    class TrackingConnection(sqlite3.Connection):
+        def execute(self, sql: str, *args, **kwargs):
+            if sql == failed_pragma:
+                raise sqlite3.OperationalError("forced PRAGMA failure")
+            return super().execute(sql, *args, **kwargs)
+
+        def close(self) -> None:
+            closed.append(self)
+            super().close()
+
+    def connect_with_pragma_failure(*args, **kwargs):
+        if kwargs.get("uri"):
+            connection = real_connect(
+                    *args,
+                    factory=TrackingConnection,
+                    **kwargs,
+                    )
+            opened.append(connection)
+            return connection
+
+        return real_connect(*args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, "connect", connect_with_pragma_failure)
+
+    with pytest.raises(sqlite3.OperationalError, match="forced PRAGMA failure"):
+        cli.factory_reset(no_backup=False)
+
+    assert len(opened) == 1
+    assert closed == opened
+    with pytest.raises(sqlite3.ProgrammingError, match="closed database"):
+        opened[0].execute("SELECT 1")
+
+    with closing(real_connect(database_path)) as connection:
+        tables = cli.application_tables(connection)
+        _, revisions, row_counts = cli.database_snapshot(
+                connection,
+                tables,
+                )
+
+    assert row_counts == (("devices", 1), ("users", 1))
+    assert revisions == (("4330f8209266",),)
+    assert not (tmp_path / "backups").exists()
+
+
 def test_factory_reset_aborts_when_database_changes_during_backup(
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
