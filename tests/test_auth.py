@@ -479,3 +479,70 @@ def test_logout_cookie_clears_session_with_security_attributes(
             "SameSite=lax",
             } <= attributes
     assert "Secure" not in attributes
+
+
+def test_login_limits_failures_without_clearing_them_on_success(
+        api_client: TestClient,
+        ) -> None:
+    assert api_client.post(
+            "/api/v1/auth/setup",
+            json=OWNER_SETUP,
+            ).status_code == 201
+
+    wrong_credentials = {
+            "username": "owner",
+            "password": "incorrect password",
+            }
+    for _ in range(4):
+        assert api_client.post(
+                "/api/v1/auth/login",
+                json=wrong_credentials,
+                ).status_code == 401
+
+    assert api_client.post(
+            "/api/v1/auth/login",
+            json=OWNER_CREDENTIALS,
+            ).status_code == 200
+    assert api_client.post(
+            "/api/v1/auth/login",
+            json=wrong_credentials,
+            ).status_code == 401
+
+    blocked = api_client.post(
+            "/api/v1/auth/login",
+            json=OWNER_CREDENTIALS,
+            )
+
+    assert blocked.status_code == 429
+    assert blocked.json() == {"detail": "Too many attempts; try again later"}
+    assert 1 <= int(blocked.headers["Retry-After"]) <= 300
+
+
+def test_setup_limits_invalid_tokens_independently_of_login(
+        api_client: TestClient,
+        ) -> None:
+    invalid_setup = {
+            **OWNER_SETUP,
+            "setup_token": "invalid-setup-token-12345678901234567890",
+            }
+
+    for _ in range(5):
+        assert api_client.post(
+                "/api/v1/auth/setup",
+                json=invalid_setup,
+                ).status_code == 403
+
+    blocked = api_client.post(
+            "/api/v1/auth/setup",
+            json=OWNER_SETUP,
+            )
+
+    assert blocked.status_code == 429
+    assert 1 <= int(blocked.headers["Retry-After"]) <= 300
+    assert api_client.get(
+            "/api/v1/auth/setup-status",
+            ).json() == {"setup_required": True}
+    assert api_client.post(
+            "/api/v1/auth/login",
+            json=OWNER_CREDENTIALS,
+            ).status_code == 401

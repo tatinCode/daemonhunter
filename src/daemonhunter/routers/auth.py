@@ -1,10 +1,11 @@
 from secrets import token_urlsafe, compare_digest
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from daemonhunter.models import User
+from daemonhunter.rate_limit import client_ip, login_limiter, setup_limiter
 
 from daemonhunter.auth import (
         CurrentUser,
@@ -71,21 +72,26 @@ def setup_owner(
         response: Response,
         session: SessionDependency,
         expected_setup_token: SetupTokenDependency,
+        request: Request,
         ) -> User:
+    requester = client_ip(request)
+
     if get_owner(session) is not None:
         raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Owner account already configured",
                 )
 
-    if not compare_digest(
-            owner_data.setup_token.get_secret_value(),
-            expected_setup_token
-            ):
-        raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Invalid setup token",
-                )
+    with setup_limiter.attempt(requester) as attempt:
+        if not compare_digest(
+                owner_data.setup_token.get_secret_value(),
+                expected_setup_token,
+                ):
+            attempt.fail()
+            raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Invalid setup token",
+                    )
 
     owner = User(
             username=owner_data.username,
@@ -123,18 +129,23 @@ def login(
         login_data: LoginRequest,
         response: Response,
         session: SessionDependency,
+        request: Request,
         ) -> User:
-    user = authenticate_user(
-            session=session,
-            username=login_data.username,
-            password=login_data.password.get_secret_value(),
-            )
+    requester = client_ip(request)
 
-    if user is None:
-        raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid username or password",
+    with login_limiter.attempt(requester) as attempt:
+        user = authenticate_user(
+                session=session,
+                username=login_data.username,
+                password=login_data.password.get_secret_value(),
                 )
+
+        if user is None:
+            attempt.fail()
+            raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid username or password",
+                    )
 
     set_session_cookie(response, user)
 

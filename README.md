@@ -55,9 +55,18 @@ The API is then available at `http://127.0.0.1:8000`.
 | `DAEMONHUNTER_DATABASE_URL` | XDG path | SQLAlchemy database URL. Path and permission behavior is documented under [Database](#database). |
 | `DAEMONHUNTER_SETUP_TOKEN` | generated at first run | Token required to create the owner account. Must be at least 32 characters. |
 | `DAEMONHUNTER_COOKIE_SECURE` | `false` | Set to `1`, `true`, `yes`, or `on` to send the session cookie with the `Secure` attribute. Enable this when serving over HTTPS. |
+| `DAEMONHUNTER_LOGIN_RATE_LIMIT_ATTEMPTS` | `5` | Failed login or setup-token attempts allowed per client IP in each window. |
+| `DAEMONHUNTER_LOGIN_RATE_LIMIT_WINDOW_SECONDS` | `300` | Sliding-window duration for login and setup-token failures. |
+| `DAEMONHUNTER_TRUST_PROXY_HEADERS` | `false` | Use the last `X-Forwarded-For` address as the client IP. Enable only behind a trusted proxy that sanitizes this header and blocks direct access. |
 
 When `DAEMONHUNTER_SETUP_TOKEN` is not set, DaemonHunter generates a token
 and logs it at startup as `First-run setup token was: <token>`.
+
+Login and first-run setup have separate, per-IP limits. By default, once five
+failures have occurred within five minutes, further attempts receive `429`
+and a `Retry-After` header. Concurrent in-flight attempts also occupy slots.
+The limits are held in memory per server process; running multiple workers
+does not provide a shared limit, and restarting the server clears the history.
 
 ## Database
 

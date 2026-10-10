@@ -53,6 +53,27 @@ configured_setup_token = os.getenv(
         "DAEMONHUNTER_SETUP_TOKEN",
         )
 
+
+LOGIN_RATE_LIMIT_ATTEMPTS = int(
+        os.getenv(
+            "DAEMONHUNTER_LOGIN_RATE_LIMIT_ATTEMPTS",
+            "5",
+            )
+        )
+
+LOGIN_RATE_LIMIT_WINDOW_SECONDS = int(
+        os.getenv(
+            "DAEMONHUNTER_LOGIN_RATE_LIMIT_WINDOW_SECONDS",
+            "300",
+            )
+        )
+
+TRUST_PROXY_HEADERS = os.getenv(
+        "DAEMONHUNTER_TRUST_PROXY_HEADERS",
+        "false",
+        ).strip().lower() in {"1", "true", "yes", "on"}
+
+
 if configured_setup_token is None:
     SETUP_TOKEN = token_urlsafe(32)
     SETUP_TOKEN_WAS_GENERATED = True
