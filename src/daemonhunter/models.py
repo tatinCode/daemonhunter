@@ -4,6 +4,7 @@ from sqlalchemy import (
         Boolean,
         Integer,
         CheckConstraint,
+        ForeignKey,
         DateTime,
         Index,
         String,
@@ -12,7 +13,7 @@ from sqlalchemy import (
         text,
         true,
         )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from daemonhunter.database import Base
 
@@ -120,3 +121,49 @@ class Device(Base):
             default=False,
             server_default=false(),
             )
+
+    status_events: Mapped[list["DeviceStatusEvent"]] = relationship(
+            back_populates="device",
+            cascade="all, delete-orphan",
+            )
+
+
+class DeviceStatusEvent(Base):
+    __tablename__ = "device_status_events"
+    __table_args__ = (
+            CheckConstraint(
+                "previous_status IN ('unknown', 'online', 'offline')",
+                name="ck_device_status_events_previous_status",
+            ),
+            CheckConstraint(
+                "new_status IN ('unknown', 'online', 'offline')",
+                name="ck_device_status_events_new_status",
+            ),
+            CheckConstraint(
+                "previous_status <> new_status",
+                name="ck_device_status_events_changed",
+            ),
+            Index(
+                "ix_device_status_events_device_id_id",
+                "device_id",
+                "id",
+                ),
+            )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    device_id: Mapped[int] = mapped_column(
+            ForeignKey("devices.id", ondelete="CASCADE"),
+            nullable=False,
+            )
+    previous_status: Mapped[str] = mapped_column(
+            String(16),
+            nullable=False,
+            )
+    new_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+            DateTime(timezone=True),
+            server_default=func.now(),
+            nullable=False,
+            )
+
+    device: Mapped[Device] = relationship(back_populates="status_events")
