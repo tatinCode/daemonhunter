@@ -82,6 +82,10 @@ class Device(Base):
                 "status IN ('unknown', 'online', 'offline')",
                 name="ck_devices_status",
                 ),
+            CheckConstraint(
+                "consecutive_failures >= 0",
+                name="ck_devices_consecutive_failures_nonnegative",
+                ),
             )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -91,6 +95,13 @@ class Device(Base):
             String(16),
             default="unknown",
             server_default="unknown",
+            )
+
+    consecutive_failures: Mapped[int] = mapped_column(
+            Integer,
+            default=0,
+            server_default=text("0"),
+            nullable=False,
             )
 
     created_at: Mapped[datetime] = mapped_column(
