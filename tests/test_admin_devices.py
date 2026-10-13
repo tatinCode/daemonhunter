@@ -1,4 +1,7 @@
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session, sessionmaker
+
+from daemonhunter.models import DeviceStatusEvent
 
 
 def test_create_device(admin_client: TestClient) -> None:
@@ -185,6 +188,34 @@ def test_deletes_device(admin_client: TestClient) -> None:
         f"/api/v1/admin/devices/{created['id']}",
     )
     assert missing_response.status_code == 404
+
+
+def test_deleting_device_removes_status_history(
+        admin_client: TestClient,
+        test_session_factory: sessionmaker[Session],
+        ) -> None:
+    created = admin_client.post(
+            "/api/v1/admin/devices",
+            json={"name": "Test Pi", "host": "192.168.1.10"},
+            ).json()
+
+    with test_session_factory() as session:
+        event = DeviceStatusEvent(
+                device_id=created["id"],
+                previous_status="unknown",
+                new_status="online",
+                )
+        session.add(event)
+        session.commit()
+        event_id = event.id
+
+    response = admin_client.delete(
+            f"/api/v1/admin/devices/{created['id']}",
+            )
+
+    assert response.status_code == 204
+    with test_session_factory() as session:
+        assert session.get(DeviceStatusEvent, event_id) is None
 
 
 def test_rejects_deleting_missing_device(admin_client: TestClient) -> None:
