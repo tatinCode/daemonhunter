@@ -223,6 +223,40 @@ The reset aborts and leaves the database untouched if it is unreadable, if
 SQLite journaling is disabled, if it is locked by another process, or if
 anything is written to it while the backup is being taken.
 
+## Monitoring
+
+The monitor worker pings every registered device and records status
+transitions. Run it alongside the web server:
+
+```bash
+uv run daemonhunter monitor
+```
+
+`--interval` sets the seconds between cycles and defaults to `60`:
+
+```bash
+uv run daemonhunter monitor --interval 30
+```
+
+The worker requires the `ping` command. On Raspberry Pi OS and Debian:
+
+```bash
+sudo apt install iputils-ping
+```
+
+Run only one monitor worker against a database. Multiple workers would
+probe the same devices redundantly and record duplicate transitions.
+
+Behavior:
+
+- A successful ping sets the device to `online` and resets its failure
+  counter.
+- A failed ping increments the counter, but the device only becomes
+  `offline` after three consecutive failures.
+- Every status change is stored in `device_status_events` and can be read
+  through the admin API.
+- A device deleted through the admin API has its history deleted with it.
+
 ## API
 
 Current endpoints:
@@ -244,6 +278,7 @@ Current endpoints:
 | `GET` | `/api/v1/admin/devices/{device_id}` | One device |
 | `PATCH` | `/api/v1/admin/devices/{device_id}` | Update a device |
 | `DELETE` | `/api/v1/admin/devices/{device_id}` | Delete a device |
+| `GET` | `/api/v1/admin/devices/{device_id}/status-events` | Device status history, newest first |
 | `GET` | `/api/v1/admin/users` | All users |
 | `POST` | `/api/v1/admin/users` | Create an admin with a temporary password |
 | `GET` | `/api/v1/admin/users/{user_id}` | One user |
@@ -285,7 +320,7 @@ Additional design notes are available in [`documentation/`](documentation/).
 2. SQLite database foundation
 3. Device management API
 4. Admin authentication and guest visibility
-5. Ping monitoring
+5. Ping monitoring - complete
 6. Basic dashboard
 7. Monitoring agent
 8. Metrics ingestion
