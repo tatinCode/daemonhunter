@@ -2,7 +2,8 @@ import os
 import sqlite3
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
+from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -17,6 +18,27 @@ connect_args = (
         if DATABASE_URL.startswith("sqlite")
         else {}
         )
+
+
+@event.listens_for(Engine, "connect")
+def enable_sqlite_foreign_keys(
+        dbapi_connection: object,
+        _: object,
+        ) -> None:
+    if not isinstance(dbapi_connection, sqlite3.Connection):
+        return
+
+    previous_autocommit = getattr(dbapi_connection, "autocommit", None)
+    if previous_autocommit is False:
+        dbapi_connection.autocommit = True
+
+    try:
+        dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
+    finally:
+        if previous_autocommit is False:
+            dbapi_connection.autocommit = previous_autocommit
+
 
 engine = create_engine(
         DATABASE_URL,

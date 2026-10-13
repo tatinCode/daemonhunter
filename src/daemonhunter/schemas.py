@@ -77,6 +77,16 @@ class DeviceResponse(BaseModel):
     updated_at: datetime
 
 
+class DeviceStatusEventResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    device_id: int
+    previous_status: Literal["unknown", "online", "offline"]
+    new_status: Literal["unknown", "online", "offline"]
+    occurred_at: datetime
+
+
 class OwnerSetupRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

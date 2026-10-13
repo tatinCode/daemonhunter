@@ -8,11 +8,11 @@ registering devices and determining whether they are online.
 ## Development Order
 
 1. Backend foundation - complete
-2. Database foundation- complete
-3. Device management API
+2. Database foundation - complete
+3. Device management API - complete
 4. Admin Authentication and guest visibility - complete
-5. Ping monitoring and status transition loggin
-6. Basic dashboard 
+5. Ping monitoring and status transition logging - complete
+6. Basic dashboard
 7. Monitoring agent
 8. Metrics ingestion
 9. Configured service and port checks
@@ -48,27 +48,42 @@ registering devices and determining whether they are online.
 - Add a factory-reset command that clears application data while preserving
   the database schema
 
-
-## Current Milestone
-
 ### Device Management API
-
-#### Goals
 
 - Add Pydantic schemas for creating, updating, and returning devices
 - Add FastAPI database-session dependency injection
-- Create devices
-- List devices
-- Retrieve individual devices
-- Update device names, hosts, and guest visibility
-- Delete devices
-- Return appropriate not-found and duplicate-device errors
-- Add API tests using an isolated SQLite database
+- Create, list, retrieve, update, and delete devices
+- Return not-found and duplicate-device errors
+- Test device persistence with an isolated SQLite database
+
+### Ping Monitoring
+
+- Add per-device consecutive-failure counters with a three-failure
+  offline threshold
+- Record every status transition in a `device_status_events` table that
+  is deleted with its device
+- Enable SQLite foreign-key enforcement
+- Probe hosts with `ping` through an injectable function
+- Add a `daemonhunter monitor --interval` worker with its own Alembic
+  migration for existing databases
+- Add an admin-only status-history endpoint, newest first
+
+
+## Current Milestone
+
+### Basic Dashboard
+
+#### Goals
+
+- Render a guest-visible device status page
+- Show each device's name, host, and current status
+- Refresh statuses automatically while the page is open
+- Serve the page from the existing FastAPI process
+- Keep the dashboard read-only
 
 #### Out of Scope
 
-- Ping and port monitoring
 - Monitoring agents
 - Metrics ingestion
-- Dashboard
+- Configured service and port checks
 - Docker deployment

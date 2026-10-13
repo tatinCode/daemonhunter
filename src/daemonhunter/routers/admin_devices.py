@@ -5,6 +5,7 @@ from fastapi import (
         Depends,
         HTTPException,
         Response,
+        Query,
         status,
         )
 from sqlalchemy import select
@@ -13,11 +14,12 @@ from sqlalchemy.orm import Session
 
 from daemonhunter.auth import require_ready_admin
 from daemonhunter.database import get_session
-from daemonhunter.models import Device
+from daemonhunter.models import Device, DeviceStatusEvent
 from daemonhunter.schemas import (
         DeviceCreate,
         DeviceResponse,
         DeviceUpdate,
+        DeviceStatusEventResponse,
         )
 
 
@@ -130,3 +132,24 @@ def delete_device(
     session.commit()
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+        "/devices/{device_id}/status-events",
+        response_model=list[DeviceStatusEventResponse],
+        )
+def list_device_status_events(
+        device_id: int,
+        session: SessionDependency,
+        limit: Annotated[int, Query(ge=1, le=500)] = 100,
+        ) -> list[DeviceStatusEvent]:
+    get_device_or_404(session, device_id)
+
+    statement = (
+            select(DeviceStatusEvent)
+            .where(DeviceStatusEvent.device_id == device_id)
+            .order_by(DeviceStatusEvent.id.desc())
+            .limit(limit)
+            )
+
+    return list(session.scalars(statement))

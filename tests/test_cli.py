@@ -925,3 +925,45 @@ def test_factory_reset_prompt_contains_confirmation_phrase(
         cli.factory_reset(no_backup=no_backup)
 
     assert prompts == [expected_prompt]
+
+
+def test_monitor_rejects_invalid_interval() -> None:
+    with pytest.raises(SystemExit, match="at least 1 second"):
+        cli.monitor_forever(0)
+
+
+def test_monitor_runs_cycles_until_interrupt(
+        test_session_factory: sessionmaker[Session],
+        monkeypatch: pytest.MonkeyPatch,
+        ) -> None:
+    cycles: list[int] = []
+
+    def fake_cycle(session) -> None:
+        cycles.append(1)
+
+    def fake_sleep(seconds: int) -> None:
+        assert seconds == 30
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli, "SessionFactory", test_session_factory)
+    monkeypatch.setattr(cli, "run_monitor_cycle", fake_cycle)
+    monkeypatch.setattr(cli.time, "sleep", fake_sleep)
+
+    cli.monitor_forever(30)
+
+    assert cycles == [1]
+
+
+def test_monitor_subcommand_defaults_to_sixty_seconds() -> None:
+    parser = cli.build_parser()
+    arguments = parser.parse_args(["monitor"])
+
+    assert arguments.interval == 60
+    assert arguments.handler is not None
+
+
+def test_monitor_subcommand_accepts_custom_interval() -> None:
+    parser = cli.build_parser()
+    arguments = parser.parse_args(["monitor", "--interval", "15"])
+
+    assert arguments.interval == 15

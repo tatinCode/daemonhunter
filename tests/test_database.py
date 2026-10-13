@@ -3,14 +3,14 @@ from pathlib import Path
 from stat import S_IMODE
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.orm.exc import StaleDataError
 
 import daemonhunter.database as database
 from daemonhunter.database import Base
-from daemonhunter.models import Device, User
+from daemonhunter.models import Device, DeviceStatusEvent, User
 
 
 def sqlalchemy_operational_error(
@@ -58,6 +58,47 @@ def test_create_and_retrieve_device(tmp_path: Path) -> None:
         assert saved_device.updated_at is not None
 
     engine.dispose()
+
+
+def test_sqlite_foreign_keys_enabled_on_app_and_test_engines(
+        test_session_factory: sessionmaker[Session],
+        ) -> None:
+    with database.engine.connect() as connection:
+        assert connection.exec_driver_sql(
+                "PRAGMA foreign_keys"
+                ).scalar_one() == 1
+
+    with test_session_factory() as session:
+        assert session.connection().exec_driver_sql(
+                "PRAGMA foreign_keys"
+                ).scalar_one() == 1
+
+
+def test_raw_device_delete_cascades_to_status_events(
+        test_session_factory: sessionmaker[Session],
+        ) -> None:
+    with test_session_factory() as session:
+        device = Device(name="Test Pi", host="192.168.1.10")
+        device.status_events.append(DeviceStatusEvent(
+                previous_status="unknown",
+                new_status="online",
+                ))
+        session.add(device)
+        session.commit()
+        device_id = device.id
+        event_id = device.status_events[0].id
+
+    with test_session_factory() as session:
+        assert session.get(DeviceStatusEvent, event_id) is not None
+        session.execute(
+                text("DELETE FROM devices WHERE id = :device_id"),
+                {"device_id": device_id},
+                )
+        session.commit()
+
+    with test_session_factory() as session:
+        assert session.get(Device, device_id) is None
+        assert session.get(DeviceStatusEvent, event_id) is None
 
 
 def test_prepares_default_database_storage(
