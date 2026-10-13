@@ -2,6 +2,7 @@ import argparse
 import getpass
 import os
 import sqlite3
+import time
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,7 @@ from daemonhunter.database import (
         prepare_database_storage,
         )
 from daemonhunter.models import User
+from daemonhunter.monitoring import run_monitor_cycle
 
 
 # Helper functions
@@ -479,6 +481,24 @@ def factory_reset(no_backup: bool) -> None:
     print("Start DaemonHunter and complete the first-run setup.")
 
 
+def monitor_forever(interval: int) -> None:
+    if interval < 1:
+        raise SystemExit("Interval must be at least 1 second")
+
+    prepare_database_storage()
+    print(f"Monitoring every {interval} seconds. Press Ctrl+C to stop.")
+
+    try:
+        while True:     # Super LOOOOOOOOOOOOOOOOOOOOOOOOP
+            with SessionFactory() as session:
+                run_monitor_cycle(session)
+
+            time.sleep(interval)
+
+    except KeyboardInterrupt:
+        print("\nMonitor stopped.")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
             prog="daemonhunter",
@@ -507,6 +527,20 @@ def build_parser() -> argparse.ArgumentParser:
             )
     factory_reset_parser.set_defaults(
             handler=lambda args: factory_reset(args.no_backup)
+            )
+
+    monitor_parser = subcommands.add_parser(
+            "monitor",
+            help="Continuously monitor device reachability",
+            )
+    monitor_parser.add_argument(
+            "--interval",
+            type=int,
+            default=60,
+            help="Seconds between checks (default: 60)",
+            )
+    monitor_parser.set_defaults(
+            handler=lambda args: monitor_forever(args.interval)
             )
 
     return parser

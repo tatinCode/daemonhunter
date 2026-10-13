@@ -1,7 +1,35 @@
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from daemonhunter.models import DeviceStatusEvent
+
+
+def create_status_events(
+        test_session_factory: sessionmaker[Session],
+        device_id: int,
+        count: int,
+        ) -> list[int]:
+    event_ids: list[int] = []
+
+    with test_session_factory() as session:
+        for index in range(count):
+            event = DeviceStatusEvent(
+                    device_id=device_id,
+                    previous_status="unknown" if index == 0 else "online",
+                    new_status="online" if index == 0 else "offline",
+                    )
+            session.add(event)
+
+        session.commit()
+        event_ids = [
+                event.id
+                for event in session.scalars(
+                    select(DeviceStatusEvent).order_by(DeviceStatusEvent.id)
+                    )
+                ]
+
+    return event_ids
 
 
 def test_create_device(admin_client: TestClient) -> None:
@@ -233,3 +261,110 @@ def test_rejects_updating_missing_device(admin_client: TestClient) -> None:
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Device not found"}
+
+
+def test_lists_status_events_newest_first(
+        admin_client: TestClient,
+        test_session_factory: sessionmaker[Session],
+        ) -> None:
+    created = admin_client.post(
+            "/api/v1/admin/devices",
+            json={"name": "Test Pi", "host": "192.168.1.10"},
+            ).json()
+    event_ids = create_status_events(
+            test_session_factory,
+            created["id"],
+            count=3,
+            )
+
+    response = admin_client.get(
+            f"/api/v1/admin/devices/{created['id']}/status-events"
+            )
+
+    assert response.status_code == 200
+    events = response.json()
+
+    assert [event["id"] for event in events] == list(reversed(event_ids))
+    assert all(event["device_id"] == created["id"] for event in events)
+    assert all(event["occurred_at"] is not None for event in events)
+    assert events[0]["new_status"] == "offline"
+    assert events[-1]["previous_status"] == "unknown"
+
+
+def test_limits_status_events(
+        admin_client: TestClient,
+        test_session_factory: sessionmaker[Session],
+        ) -> None:
+    created = admin_client.post(
+            "/api/v1/admin/devices",
+            json={"name": "Test Pi", "host": "192.168.1.10"},
+            ).json()
+    event_ids = create_status_events(
+            test_session_factory,
+            created["id"],
+            count=3,
+            )
+
+    response = admin_client.get(
+            f"/api/v1/admin/devices/{created['id']}/status-events?limit=2"
+            )
+
+    assert response.status_code == 200
+    events = response.json()
+
+    assert [event["id"] for event in events] == list(reversed(event_ids))[:2]
+
+
+def test_rejects_invalid_status_events_limit(
+        admin_client: TestClient,
+        ) -> None:
+    created = admin_client.post(
+            "/api/v1/admin/devices",
+            json={"name": "Test Pi", "host": "192.168.1.10"},
+            ).json()
+
+    too_small = admin_client.get(
+            f"/api/v1/admin/devices/{created['id']}/status-events?limit=0"
+            )
+    too_large = admin_client.get(
+            f"/api/v1/admin/devices/{created['id']}/status-events?limit=501"
+            )
+
+    assert too_small.status_code == 422
+    assert too_large.status_code == 422
+
+
+def test_lists_empty_status_events_for_new_device(
+        admin_client: TestClient,
+        ) -> None:
+    created = admin_client.post(
+            "/api/v1/admin/devices",
+            json={"name": "Test Pi", "host": "192.168.1.10"},
+            ).json()
+
+    response = admin_client.get(
+            f"/api/v1/admin/devices/{created['id']}/status-events"
+            )
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_rejects_status_events_for_missing_device(
+        admin_client: TestClient,
+        ) -> None:
+    response = admin_client.get(
+            "/api/v1/admin/devices/999/status-events"
+            )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Device not found"}
+
+
+def test_status_events_require_authentication(
+        api_client: TestClient,
+        ) -> None:
+    response = api_client.get("/api/v1/admin/devices/1/status-events")
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Authentication Required"}
