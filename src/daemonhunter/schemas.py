@@ -87,6 +87,19 @@ class DeviceStatusEventResponse(BaseModel):
     occurred_at: datetime
 
 
+class StatusActivityItem(DeviceStatusEventResponse):
+    name: str
+    host: str
+
+
+class StatusActivityPage(BaseModel):
+    items: list[StatusActivityItem]
+    total: int
+    page: int
+    limit: int
+    snapshot_id: int
+
+
 class OwnerSetupRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

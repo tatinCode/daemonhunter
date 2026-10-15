@@ -253,6 +253,7 @@ dependencies = [
     { name = "alembic" },
     { name = "fastapi", extra = ["standard"] },
     { name = "itsdangerous" },
+    { name = "jinja2" },
     { name = "pwdlib", extra = ["argon2"] },
     { name = "sqlalchemy" },
 ]
@@ -267,6 +268,7 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.20.0" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.141.1" },
     { name = "itsdangerous", specifier = ">=2.2.0" },
+    { name = "jinja2", specifier = ">=3.1.6" },
     { name = "pwdlib", extras = ["argon2"], specifier = ">=0.3.0" },
     { name = "sqlalchemy", specifier = ">=2.0.52" },
 ]
