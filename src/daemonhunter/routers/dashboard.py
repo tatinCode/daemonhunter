@@ -140,14 +140,23 @@ def render_page(
         page: str,
         selected_id: int | None = None,
         ) -> HTMLResponse:
+    state = dashboard_data(request, session, selected_id)
+    status_code = 200
+    if page in {"account", "users"} and state["user"] is None:
+        status_code = 401
+    elif page == "users" and not (
+            state["can_manage"] and state["user"]["role"] == "owner"
+            ):
+        status_code = 403
     return templates.TemplateResponse(
             request=request,
             name="dashboard.html",
             context={
-                "state": dashboard_data(request, session, selected_id),
+                "state": state,
                 "page": page,
                 },
             headers={"Cache-Control": "no-store"},
+            status_code=status_code,
             )
 
 
@@ -163,6 +172,16 @@ def dashboard_devices(
 @router.get("/activity", response_class=HTMLResponse)
 def dashboard_activity(request: Request, session: SessionDependency) -> HTMLResponse:
     return render_page(request, session, "activity")
+
+
+@router.get("/account", response_class=HTMLResponse)
+def dashboard_account(request: Request, session: SessionDependency) -> HTMLResponse:
+    return render_page(request, session, "account")
+
+
+@router.get("/users", response_class=HTMLResponse)
+def dashboard_users(request: Request, session: SessionDependency) -> HTMLResponse:
+    return render_page(request, session, "users")
 
 
 @router.get("/dashboard/state", response_class=JSONResponse)

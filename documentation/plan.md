@@ -6,6 +6,18 @@ Finish the layout and usability of Overview, Devices, and Activity before starti
 another monitoring feature. Review spacing, empty and populated states, responsive
 layouts, navigation, and the existing account and device-management flows.
 
+Implemented polish includes distinct dismissible notifications, a steady background
+refresh indicator, mobile inventory cards with accessible management actions,
+URL-persisted filters and pagination, the ghost favicon, actionable empty states,
+and keyboard-focus restoration. Optional browser regression checks live in
+`tests/browser/`; see the README's Testing section for commands.
+
+The account-management gap is closed with `/account` for profile/password changes
+and owner-only `/users` for admin creation, renaming, activation, password resets,
+and confirmed deletion. Browser CI covers these flows alongside the existing pages.
+The existing dashboard layout is retained, with only the required navigation and
+page-specific controls added. Remaining dashboard limitations are listed in the README.
+
 Optional named-port monitoring is agreed future work. It is deferred while the
 dashboard layout is being finished.
 

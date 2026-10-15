@@ -22,6 +22,15 @@ TEST_SETUP_TOKEN = (
         )
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+            "--run-browser",
+            action="store_true",
+            default=False,
+            help="Run optional Chromium dashboard tests",
+            )
+
+
 @pytest.fixture
 def test_session_factory(
         tmp_path: Path,

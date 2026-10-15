@@ -264,6 +264,9 @@ shows real device reachability in a dark, responsive overview with a compact
 six-device inventory, status filters, name sorting, and a selected-device detail panel.
 The overview refreshes every five seconds while preserving your search, filter,
 and selection. A failed refresh leaves the last loaded results visible with a notice.
+Searches, status filters, sort order, and selected devices are kept in the page URL,
+so reload, browser Back/Forward, and bookmarked links restore the same view.
+Notifications distinguish success, errors, and information and can be dismissed.
 
 Guests see only guest-visible devices and their statuses. Sign in with an owner
 or admin account to see all devices, consecutive failures, last status-change times,
@@ -289,6 +292,8 @@ Ready admins can edit a device's name, host and visibility, toggle guest sharing
 directly in the table, and delete devices after confirmation. Deletion also removes
 their transition history. Guests get a read-only inventory of shared devices.
 Links from Activity open this page with the relevant device selected.
+On narrow screens the full inventory becomes labelled cards with sharing, Edit,
+and Delete controls visible without horizontal scrolling.
 
 ### Activity
 
@@ -298,6 +303,9 @@ device, resulting status and a local date/time range, and browse 25, 50 or 100 e
 per page. History is ordered by occurrence time and then event ID, newest first.
 Pagination pins a snapshot so new events do not shift rows between pages. Page one
 refreshes automatically; **Refresh latest** starts a fresh snapshot at page one.
+Applied filters, pagination, and the snapshot ID are reflected in the URL and restored
+when returning to the page. Date bounds in URLs use UTC; form controls show local time.
+Background refresh uses a reserved header indicator so the history table stays in place.
 
 This is a status-transition log, not an audit log: device creation, edits, deletion,
 and user actions do not create entries. Deleting a device removes its status entries.
@@ -313,6 +321,34 @@ No CDN, Node build step or external fonts are required. Dashboard pages, the
 Without JavaScript, the initial device list remains readable and can be refreshed
 manually; interactive forms require JavaScript or the existing API at `/docs`.
 
+### Account
+
+Signed-in owners and admins can open `/account` from the sidebar to view their
+username and role and change their password voluntarily. Enter the current password,
+a new password of 12–128 characters, and its confirmation. Changing the password
+revokes other sessions while keeping the current session signed in. Users with a
+temporary password can also complete their required password change here.
+
+### Users
+
+Ready owners can open `/users` to list accounts, create admins with temporary
+passwords, rename admins, enable or disable accounts, reset passwords, and delete
+admins after confirmation. Disabling an account or resetting its password revokes
+its existing sessions; a reset requires a password change at the next login.
+The owner row is protected from these admin-management actions. Guests and admins
+cannot access the account list or perform owner-only operations. Losing owner access
+clears the loaded list and closes account-management dialogs.
+
+### Current Dashboard Limitations
+
+- Named TCP-port checks and clickable service links are deferred; the agreed design
+  is in [the development plan](documentation/plan.md).
+- Agent metrics are not collected yet; CPU, memory, uptime and related fields remain
+  unavailable.
+- Ownership transfer is available through the existing API, not through the Users page.
+- Global application settings are configured through environment variables rather
+  than a dashboard settings editor.
+
 ## API
 
 Current endpoints:
@@ -322,6 +358,8 @@ Current endpoints:
 | `GET` | `/` | Device dashboard; guest or authenticated admin view |
 | `GET` | `/devices` | Full inventory with admin management controls |
 | `GET` | `/activity` | Status-history page with admin login gate |
+| `GET` | `/account` | Signed-in profile and password-change page |
+| `GET` | `/users` | Owner-only administrator-account management |
 | `GET` | `/dashboard/state` | Dashboard refresh data with session-aware visibility |
 | `GET` | `/api/v1/health` | Backend health check |
 | `GET` | `/api/v1/auth/setup-status` | Whether the owner account still needs to be created |
@@ -366,6 +404,32 @@ Run the test suite with:
 ```bash
 uv run pytest
 ```
+
+Browser regression checks are optional and use temporary databases and a local test
+server. Install the browser group and run them with:
+
+```bash
+uv run --group browser pytest tests/browser --run-browser -q
+```
+
+The tests use a system `chromium` or `chromium-browser` if available. Otherwise,
+install Playwright's Chromium first:
+
+```bash
+uv run --group browser playwright install chromium
+```
+
+Set `DAEMONHUNTER_TEST_BROWSER` to use another Chromium executable. Browser tests
+skip unless `--run-browser` is supplied, or when Playwright or a browser is
+unavailable. To run the API and browser suites together:
+
+```bash
+uv run --group browser pytest --run-browser
+```
+
+GitHub Actions is configured to run the API tests on Python 3.11 and 3.14 and a
+separate Chromium browser-test job on Python 3.14. That job installs Chromium and
+its system dependencies and runs the browser suite with `--run-browser`.
 
 ## Architecture
 

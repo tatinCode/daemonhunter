@@ -70,7 +70,7 @@ def create_app() -> FastAPI:
             ) -> Response:
         response = await call_text(request)
 
-        if request.url.path in {"/", "/devices", "/activity", "/dashboard/state"} or request.url.path.startswith(
+        if request.url.path in {"/", "/devices", "/activity", "/account", "/users", "/dashboard/state"} or request.url.path.startswith(
                 ("/api/v1/auth/", "/api/v1/admin/")
                 ):
             response.headers["Cache-Control"] = "no-store"

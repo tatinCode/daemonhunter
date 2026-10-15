@@ -31,6 +31,21 @@ jobs:
       - run: uv sync --frozen
       - run: uv run --frozen pytest
 
+  browser:
+    name: Chromium dashboard
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+      - name: Install uv and select Python
+        uses: astral-sh/setup-uv@v10.3.0
+        with:
+          python-version: "3.14"
+          enable-cache: true
+      - run: uv sync --frozen --group browser
+      - run: uv run --frozen --group browser playwright install --with-deps chromium
+      - run: uv run --frozen --group browser pytest tests/browser --run-browser -q
 
 
 

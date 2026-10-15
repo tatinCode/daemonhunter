@@ -5,6 +5,7 @@
     const stateUrl = new URL(document.body.dataset.stateUrl);
     const apiBase = new URL("../api/v1/", stateUrl);
     const page = document.body.dataset.page;
+    const inventoryPage = page === "overview" || page === "devices";
     const devicesUrl = new URL(document.body.dataset.devicesUrl);
     let state = JSON.parse($("dashboard-state").textContent);
     $("dashboard-state").remove();
@@ -26,6 +27,119 @@
     let refreshInFlight = null;
     let pollTimer;
     let lastRefreshed = Date.now();
+    const dialogReturnFocus = new Map();
+
+    function validId(value, allowZero = false) {
+        if (!value || !/^\d+$/.test(value)) return null;
+        const number = BigInt(value);
+        return number >= (allowZero ? 0n : 1n) && number <= 9223372036854775807n ? value : null;
+    }
+
+    function localDateValue(value) {
+        const date = new Date(value);
+        if (!value || Number.isNaN(date.getTime())) return "";
+        const pad = (number) => String(number).padStart(2, "0");
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    }
+
+    function syncDeviceControls() {
+        if (!$("device-rows")) return;
+        for (const button of document.querySelectorAll("[data-filter]")) {
+            const active = button.dataset.filter === statusFilter;
+            button.classList.toggle("active", active);
+            button.setAttribute("aria-pressed", String(active));
+        }
+        $("sort-direction").textContent = sortAscending ? "▴" : "▾";
+        $("device-name-heading").setAttribute("aria-sort", sortAscending ? "ascending" : "descending");
+        const label = `Sort devices by name ${sortAscending ? "descending" : "ascending"}`;
+        $("sort-name").setAttribute("aria-label", label);
+        if ($("sort-devices-mobile")) {
+            $("sort-devices-mobile").textContent = `Sort: Name ${sortAscending ? "↑" : "↓"}`;
+            $("sort-devices-mobile").setAttribute("aria-label", label);
+        }
+    }
+
+    function restoreUrlState() {
+        const params = new URL(window.location.href).searchParams;
+        if (page === "activity") {
+            activitySequence += 1;
+            activityLoading = false;
+            activityResult = null;
+            $("history-rows").replaceChildren();
+            $("history-empty").hidden = true;
+            activityFilters = { limit: ["25", "50", "100"].includes(params.get("limit")) ? params.get("limit") : "25" };
+            activityFilters.q = (params.get("q") || "").slice(0, 100);
+            activityFilters.device_id = validId(params.get("device_id")) || "";
+            activityFilters.new_status = ["online", "offline", "unknown"].includes(params.get("new_status")) ? params.get("new_status") : "";
+            for (const key of ["start", "end"]) {
+                const date = new Date(params.get(key) || "");
+                activityFilters[key] = Number.isNaN(date.getTime()) ? "" : date.toISOString();
+                $(`activity-${key}`).value = localDateValue(activityFilters[key]);
+            }
+            $("activity-search").value = activityFilters.q;
+            $("activity-status").value = activityFilters.new_status;
+            $("activity-limit").value = activityFilters.limit;
+            if (activityFilters.device_id && !Array.from($("activity-device").options).some((option) => option.value === activityFilters.device_id)) {
+                $("activity-device").append(new Option("Device no longer available", activityFilters.device_id));
+            }
+            $("activity-device").value = activityFilters.device_id;
+            const requestedPage = Number(params.get("page") || 1);
+            activityPage = Number.isInteger(requestedPage) && requestedPage >= 1 && requestedPage <= 1000000 ? requestedPage : 1;
+            activitySnapshot = validId(params.get("snapshot_id"), true);
+        } else if (inventoryPage) {
+            $("device-search").value = (params.get("q") || "").slice(0, 255);
+            statusFilter = ["online", "offline", "unknown"].includes(params.get("status")) ? params.get("status") : "all";
+            sortAscending = params.get("sort") !== "name_desc";
+            const requestedId = Number(validId(params.get("selected_id")));
+            selectedId = Number.isSafeInteger(requestedId) && requestedId > 0 ? requestedId : state.selected_id;
+            syncDeviceControls();
+        }
+    }
+
+    function syncUrl(mode = "replace") {
+        if (!inventoryPage && page !== "activity") return;
+        const url = new URL(window.location.href);
+        const keys = page === "activity"
+            ? ["q", "device_id", "new_status", "start", "end", "limit", "page", "snapshot_id"]
+            : ["q", "status", "sort", "selected_id"];
+        for (const key of keys) url.searchParams.delete(key);
+        if (page === "activity") {
+            for (const [key, value] of Object.entries(activityFilters)) {
+                if (value && !(key === "limit" && value === "25")) url.searchParams.set(key, value);
+            }
+            if (activityPage > 1) url.searchParams.set("page", activityPage);
+            if (activitySnapshot !== null) url.searchParams.set("snapshot_id", activitySnapshot);
+        } else {
+            const search = $("device-search").value.trim();
+            if (search) url.searchParams.set("q", search);
+            if (statusFilter !== "all") url.searchParams.set("status", statusFilter);
+            if (!sortAscending) url.searchParams.set("sort", "name_desc");
+            if (selectedId) url.searchParams.set("selected_id", selectedId);
+        }
+        if (url.href !== window.location.href) window.history[mode === "push" ? "pushState" : "replaceState"](null, "", url);
+    }
+
+    function focusReference(node = document.activeElement) {
+        if (!node) return null;
+        for (const key of ["select", "edit", "delete", "visibility"]) {
+            if (node.dataset?.[key]) return { key, value: node.dataset[key] };
+        }
+        return node.id ? { id: node.id } : null;
+    }
+
+    function restoreFocus(reference, fallback = false) {
+        const node = reference?.id ? $(reference.id) : reference
+            ? Array.from(document.querySelectorAll(`[data-${reference.key}]`)).find((item) => item.dataset[reference.key] === reference.value)
+            : null;
+        if (node && !node.disabled && node.getClientRects().length) node.focus({ preventScroll: true });
+        else if (fallback) $("add-device-button").focus({ preventScroll: true });
+    }
+
+    function showDialog(id) {
+        const reference = focusReference();
+        if (!document.activeElement.closest("dialog") && reference) dialogReturnFocus.set(id, reference);
+        $(id).showModal();
+    }
 
     function element(tag, className = "", text = "") {
         const node = document.createElement(tag);
@@ -84,7 +198,7 @@
         if (!$("device-rows")) return;
         const matching = filteredDevices();
         const devices = page === "overview" ? matching.slice(0, 6) : matching;
-        const focusedId = document.activeElement?.dataset.select;
+        const focused = $("device-rows").contains(document.activeElement) ? focusReference() : null;
         const fragment = document.createDocumentFragment();
         for (const device of devices) {
             const row = element("tr", device.id === selectedId ? "selected" : "");
@@ -101,10 +215,12 @@
             nameCell.append(icon("server", "device-icon"), name);
             heading.append(nameCell);
             const status = element("td");
+            status.dataset.label = "Status";
             status.append(statusBadge(device.status));
             row.append(heading, status);
             if (page === "devices") {
                 const visibility = element("td");
+                visibility.dataset.label = "Guest visibility";
                 if (state.can_manage) {
                     const toggle = element("button", `visibility-switch ${device.guest_visible ? "shared" : ""}`, device.guest_visible ? "Shared" : "Private");
                     toggle.type = "button";
@@ -115,7 +231,9 @@
                     toggle.disabled = busyDevices.has(device.id);
                     visibility.append(toggle);
                 } else visibility.textContent = "Shared";
-                row.append(visibility, element("td", "", state.can_manage ? String(device.consecutive_failures) : "—"));
+                const failures = element("td", "", state.can_manage ? String(device.consecutive_failures) : "—");
+                failures.dataset.label = "Failures";
+                row.append(visibility, failures);
             } else {
                 for (const metric of ["CPU", "Memory", "Uptime"]) {
                     const cell = element("td", "unavailable", "—");
@@ -124,10 +242,12 @@
                 }
             }
             const changed = element("td", "last-change");
+            changed.dataset.label = "Last status change";
             changed.append(timeNode(device.last_status_change));
             row.append(changed);
             if (page === "devices") {
-                const actions = element("td");
+                const actions = element("td", "device-actions");
+                actions.dataset.label = "Actions";
                 if (state.can_manage) {
                     const group = element("div", "row-actions");
                     for (const action of ["edit", "delete"]) {
@@ -145,16 +265,16 @@
             fragment.append(row);
         }
         $("device-rows").replaceChildren(fragment);
-        if (focusedId) {
-            const button = Array.from($("device-rows").querySelectorAll("[data-select]")).find((node) => node.dataset.select === focusedId);
-            button?.focus({ preventScroll: true });
-        }
+        if (focused) restoreFocus(focused);
         const empty = $("devices-empty");
         empty.hidden = devices.length > 0;
         empty.querySelector("h3").textContent = state.devices.length ? "No matching devices" : "No devices to display";
         empty.querySelector("p").textContent = state.devices.length
             ? "Try another search or status filter."
             : state.can_manage ? "Add your first device to start monitoring." : "Devices appear here when an administrator shares them with guests.";
+        $("clear-device-filters").hidden = state.devices.length === 0;
+        $("devices-empty-action").hidden = state.devices.length > 0;
+        $("devices-empty-action").textContent = state.can_manage ? "Add device" : accountActionLabel();
         $("device-count").textContent = `${devices.length} of ${state.devices.length} devices${matching.length > devices.length ? " · Open Devices for the full list" : ""}`;
         $("visibility-label").textContent = state.can_manage ? "All registered devices" : "Guest-visible devices only";
         if ($("devices-mode-note")) $("devices-mode-note").textContent = state.can_manage
@@ -206,6 +326,13 @@
         $("selected-name").textContent = device ? `· ${device.name}` : "· Select a device";
         if (!device) {
             details.append(element("p", "muted", "Select a device from the table to inspect its status and recent transitions."));
+            if (!state.devices.length) {
+                const action = element("button", "secondary-button", state.can_manage ? "Add device" : accountActionLabel());
+                action.type = "button";
+                action.id = "selected-empty-account-action";
+                action.dataset.emptyAccountAction = "";
+                details.append(action);
+            }
             return;
         }
         const facts = element("dl", "device-facts");
@@ -255,9 +382,22 @@
         list.replaceChildren();
         $("view-activity").hidden = !state.can_manage;
         if (!state.can_manage || !state.events.length) {
-            list.append(element("p", "panel-placeholder", state.can_manage
+            const placeholder = element("div", "panel-placeholder");
+            placeholder.append(element("p", "", state.can_manage
                 ? "No status transitions recorded yet. Run the monitor worker to start collecting history."
                 : "Sign in as an admin to view device transition history."));
+            if (state.can_manage) {
+                const link = element("a", "text-button", "Manage devices");
+                link.href = devicesUrl;
+                placeholder.append(link);
+            } else {
+                const login = element("button", "text-button", accountActionLabel());
+                login.type = "button";
+                login.id = "recent-activity-login";
+                login.dataset.login = "";
+                placeholder.append(login);
+            }
+            list.append(placeholder);
             return;
         }
         for (const event of state.events.slice(0, 3)) {
@@ -292,11 +432,12 @@
             $("history-rows").replaceChildren();
             $("activity-device").replaceChildren(new Option("All devices", ""));
             $("activity-error").hidden = true;
+            setHistoryBusy(false);
             return;
         }
         const key = JSON.stringify(state.devices.map((device) => [device.id, device.name]));
         if (key !== activityOptionsKey) {
-            const selected = $("activity-device").value;
+            const selected = $("activity-device").value || activityFilters.device_id || "";
             $("activity-device").replaceChildren(new Option("All devices", ""));
             for (const device of state.devices) $("activity-device").append(new Option(device.name, String(device.id)));
             if (selected && !state.devices.some((device) => String(device.id) === selected)) {
@@ -331,11 +472,21 @@
         }
         $("history-rows").replaceChildren(fragment);
         $("history-empty").hidden = activityResult.items.length > 0;
+        const hasFilters = Object.entries(activityFilters).some(([key, value]) => key !== "limit" && value);
+        $("history-empty").querySelector("h3").textContent = hasFilters ? "No matching transitions" : "No transitions recorded yet";
+        $("history-clear-filters").hidden = !hasFilters;
         $("history-count").textContent = `${activityResult.total} matching transitions`;
         const pages = Math.max(1, Math.ceil(activityResult.total / activityResult.limit));
         $("history-page").textContent = `Page ${activityResult.page} of ${pages}`;
         $("history-previous").disabled = activityResult.page <= 1;
         $("history-next").disabled = activityResult.page >= pages;
+    }
+
+    function setHistoryBusy(busy) {
+        $("activity-refreshing").classList.toggle("is-active", busy);
+        $("activity-refreshing").setAttribute("aria-hidden", String(!busy));
+        $("activity-loading").hidden = !busy || activityResult !== null;
+        $("history-results").setAttribute("aria-busy", String(busy));
     }
 
     async function loadActivity(latest = false) {
@@ -348,7 +499,7 @@
         }
         url.searchParams.set("page", activityPage);
         if (!latest && activitySnapshot !== null) url.searchParams.set("snapshot_id", activitySnapshot);
-        $("activity-loading").hidden = false;
+        setHistoryBusy(true);
         $("history-previous").disabled = true;
         $("history-next").disabled = true;
         try {
@@ -357,6 +508,7 @@
             activityResult = result;
             activityPage = result.page;
             activitySnapshot = result.snapshot_id;
+            syncUrl();
             $("activity-error").hidden = true;
             renderHistory();
         } catch (error) {
@@ -366,14 +518,16 @@
                 renderActivityAccess();
                 await refresh(true);
             } else {
-                $("activity-error").textContent = `${error.message} The last loaded history is preserved; use Refresh latest to retry.`;
+                $("activity-error").textContent = `${error.message} ${activityResult ? "The last loaded history is preserved; use Refresh latest to retry." : "Use Refresh latest to retry loading history."}`;
                 $("activity-error").hidden = false;
                 renderHistory();
+                $("history-previous").disabled = true;
+                $("history-next").disabled = true;
             }
         } finally {
             if (sequence === activitySequence) {
                 activityLoading = false;
-                $("activity-loading").hidden = true;
+                setHistoryBusy(false);
             }
         }
     }
@@ -381,6 +535,7 @@
     async function toggleVisibility(id) {
         const device = state.devices.find((item) => item.id === id);
         if (!state.can_manage || !device || busyDevices.has(id)) return;
+        const returnFocus = focusReference();
         busyDevices.add(id);
         renderDevices();
         try {
@@ -388,11 +543,12 @@
             await refresh(true);
             notify(`${updated.name} is now ${updated.guest_visible ? "shared with guests" : "private"}.`);
         } catch (error) {
-            notify(`Could not change visibility: ${error.message}`);
+            notify(`Could not change visibility: ${error.message}`, "error");
             if (error.status === 401 || error.status === 403) await refresh(true);
         } finally {
             busyDevices.delete(id);
             renderDevices();
+            if (document.activeElement === document.body && !document.querySelector("dialog[open]")) restoreFocus(returnFocus);
         }
     }
 
@@ -402,6 +558,8 @@
         $("account-name").textContent = state.user?.username || "";
         $("account-role").textContent = state.user ? state.user.role[0].toUpperCase() + state.user.role.slice(1) : "";
         $("logout-button").hidden = !state.user;
+        $("account-nav-link").hidden = !state.user;
+        $("users-nav-link").hidden = !(state.can_manage && state.user?.role === "owner");
         $("auth-button").hidden = state.can_manage;
         $("auth-button").querySelector("span").textContent = state.user ? "Change password" : state.setup_required ? "Set up owner" : "Log in";
         if (!state.can_manage && $("device-dialog").open) $("device-dialog").close();
@@ -411,12 +569,15 @@
         renderActivity();
         if (page === "activity") {
             renderActivityAccess();
-            if (state.can_manage && !activityLoading) loadActivity(activityPage === 1);
+            if (state.can_manage && !activityLoading) loadActivity(activityResult !== null && activityPage === 1);
         }
         if (addDeviceAfterAuth && state.can_manage && !$("auth-dialog").open) {
             addDeviceAfterAuth = false;
             openDeviceForm();
         }
+        window.dispatchEvent(new CustomEvent("daemonhunter:state", { detail: {
+            user: state.user, can_manage: state.can_manage, setup_required: state.setup_required,
+        } }));
     }
 
     function errorMessage(payload, fallback) {
@@ -469,7 +630,10 @@
             try {
                 const next = await request(url);
                 state = next;
-                if (selectedId === requestedId) selectedId = next.selected_id;
+                if (selectedId === requestedId) {
+                    selectedId = next.selected_id;
+                    if (inventoryPage && selectedId !== requestedId && new URL(window.location.href).searchParams.has("selected_id")) syncUrl();
+                }
                 lastRefreshed = Date.now();
                 $("refresh-error").hidden = true;
                 render();
@@ -489,9 +653,43 @@
         pollTimer = setTimeout(poll, 5000);
     }
 
-    function notify(message) {
-        $("action-message").textContent = message;
+    function notify(message, type = "success") {
+        const label = { success: "Success", error: "Error", info: "Information" }[type];
+        $("action-message").classList.remove("success", "error", "info");
+        $("action-message").classList.add(type);
+        $("action-message-text").setAttribute("role", type === "error" ? "alert" : "status");
+        $("action-message-text").setAttribute("aria-live", type === "error" ? "assertive" : "polite");
+        $("action-message-text").textContent = `${label}: ${message}`;
         $("action-message").hidden = false;
+    }
+
+    function accountActionLabel() {
+        return state.user ? "Change password" : state.setup_required ? "Set up owner" : "Log in";
+    }
+
+    function startAddDevice() {
+        if (state.can_manage) openDeviceForm();
+        else {
+            addDeviceAfterAuth = true;
+            openAuth();
+        }
+    }
+
+    function clearDeviceFilters(mode = "push") {
+        $("device-search").value = "";
+        statusFilter = "all";
+        syncDeviceControls();
+        syncUrl(mode);
+        renderDevices();
+    }
+
+    function clearActivityFilters() {
+        $("activity-filters").reset();
+        activityFilters = { limit: "25" };
+        activityPage = 1;
+        activitySnapshot = null;
+        syncUrl("push");
+        loadActivity(true);
     }
 
     function openAuth() {
@@ -515,7 +713,7 @@
         $("auth-password-label").textContent = changing ? "Current password" : "Password";
         $("auth-password").minLength = settingUp ? 12 : 1;
         $("auth-password").autocomplete = settingUp ? "new-password" : "current-password";
-        $("auth-dialog").showModal();
+        showDialog("auth-dialog");
     }
 
     function openDeviceForm(device = null) {
@@ -532,38 +730,52 @@
             $("device-form").elements.guest_visible.checked = device.guest_visible;
         }
         $("device-form").querySelector(".form-error").hidden = true;
-        $("device-dialog").showModal();
+        showDialog("device-dialog");
     }
 
     async function submitForm(form, operation) {
         const button = form.querySelector('button[type="submit"]');
         const error = form.querySelector(".form-error");
         button.disabled = true;
+        button.setAttribute("aria-busy", "true");
         error.hidden = true;
         try { await operation(new FormData(form)); }
         catch (exception) {
             error.textContent = exception.message;
             error.hidden = false;
-        } finally { button.disabled = false; }
+        } finally {
+            button.disabled = false;
+            button.removeAttribute("aria-busy");
+        }
     }
 
-    $("device-search")?.addEventListener("input", renderDevices);
+    $("device-search")?.addEventListener("input", () => {
+        syncUrl();
+        renderDevices();
+    });
     for (const button of document.querySelectorAll("[data-filter]")) {
         button.addEventListener("click", () => {
             statusFilter = button.dataset.filter;
-            for (const tab of document.querySelectorAll("[data-filter]")) {
-                const active = tab === button;
-                tab.classList.toggle("active", active);
-                tab.setAttribute("aria-pressed", String(active));
-            }
+            syncDeviceControls();
+            syncUrl("push");
             renderDevices();
         });
     }
-    $("sort-name")?.addEventListener("click", () => {
+    function toggleSort() {
         sortAscending = !sortAscending;
-        $("sort-direction").textContent = sortAscending ? "▴" : "▾";
-        $("sort-name").setAttribute("aria-label", `Sort devices by name ${sortAscending ? "descending" : "ascending"}`);
+        syncDeviceControls();
+        syncUrl("push");
         renderDevices();
+    }
+    $("sort-name")?.addEventListener("click", toggleSort);
+    $("sort-devices-mobile")?.addEventListener("click", toggleSort);
+    $("clear-device-filters")?.addEventListener("click", () => {
+        clearDeviceFilters();
+        $("device-search").focus({ preventScroll: true });
+    });
+    $("dismiss-notification").addEventListener("click", () => {
+        $("action-message").hidden = true;
+        $("main").focus({ preventScroll: true });
     });
     document.addEventListener("click", (event) => {
         const select = event.target.closest("[data-select]");
@@ -571,11 +783,7 @@
             selectedId = Number(select.dataset.select);
             renderDevices();
             renderSelected();
-            if (page === "devices") {
-                const url = new URL(window.location.href);
-                url.searchParams.set("selected_id", selectedId);
-                window.history.replaceState(null, "", url);
-            }
+            syncUrl();
             refresh(true);
         }
         const edit = event.target.closest("[data-edit]");
@@ -592,7 +800,7 @@
                 deletingDeviceId = device.id;
                 $("delete-device-name").textContent = `${device.name} · ${device.host}`;
                 $("delete-form").querySelector(".form-error").hidden = true;
-                $("delete-dialog").showModal();
+                showDialog("delete-dialog");
             }
         }
         const close = event.target.closest("[data-close]");
@@ -600,18 +808,23 @@
             if (close.dataset.close === "auth-dialog") addDeviceAfterAuth = false;
             $(close.dataset.close).close();
         }
+        if (event.target.closest("[data-empty-account-action]")) {
+            if (state.can_manage) startAddDevice();
+            else {
+                addDeviceAfterAuth = false;
+                openAuth();
+            }
+        }
+        if (event.target.closest("[data-login]")) {
+            addDeviceAfterAuth = false;
+            openAuth();
+        }
     });
     $("auth-button").addEventListener("click", () => {
         addDeviceAfterAuth = false;
         openAuth();
     });
-    $("add-device-button").addEventListener("click", () => {
-        if (state.can_manage) openDeviceForm();
-        else {
-            addDeviceAfterAuth = true;
-            openAuth();
-        }
-    });
+    $("add-device-button").addEventListener("click", startAddDevice);
     $("device-form").addEventListener("submit", (event) => {
         event.preventDefault();
         submitForm(event.currentTarget, async (data) => {
@@ -626,8 +839,7 @@
             selectedId = created.id;
             $("device-dialog").close();
             $("device-form").reset();
-            if ($("device-search")) $("device-search").value = "";
-            document.querySelector('[data-filter="all"]')?.click();
+            if ($("device-search")) clearDeviceFilters("replace");
             await refresh(true);
             notify(editing ? `Updated ${created.name}.` : `Added ${created.name}. Its status starts as Unknown until the monitor checks it.`);
             if (page === "activity") {
@@ -665,28 +877,30 @@
         activityFilters = filters;
         activityPage = 1;
         activitySnapshot = null;
+        syncUrl("push");
         loadActivity(true);
     });
-    $("activity-clear")?.addEventListener("click", () => {
-        $("activity-filters").reset();
-        activityFilters = { limit: "25" };
-        activityPage = 1;
-        activitySnapshot = null;
-        loadActivity(true);
+    $("activity-clear")?.addEventListener("click", clearActivityFilters);
+    $("history-clear-filters")?.addEventListener("click", () => {
+        clearActivityFilters();
+        $("activity-search").focus({ preventScroll: true });
     });
     $("activity-refresh")?.addEventListener("click", () => {
         activityPage = 1;
         activitySnapshot = null;
+        syncUrl("push");
         loadActivity(true);
     });
     $("history-previous")?.addEventListener("click", () => {
         if (activityPage > 1) {
             activityPage -= 1;
+            syncUrl("push");
             loadActivity();
         }
     });
     $("history-next")?.addEventListener("click", () => {
         activityPage += 1;
+        syncUrl("push");
         loadActivity();
     });
     $("auth-form").addEventListener("submit", (event) => {
@@ -702,7 +916,7 @@
             state.user = { username: user.username, role: user.role, must_change_password: user.must_change_password };
             state.setup_required = false;
             await refresh(true);
-            notify(user.must_change_password ? "Signed in. Change your temporary password to manage devices." : `Signed in as ${user.username}.`);
+            notify(user.must_change_password ? "Signed in. Change your temporary password to manage devices." : `Signed in as ${user.username}.`, user.must_change_password ? "info" : "success");
             if (user.must_change_password) openAuth();
         });
     });
@@ -715,7 +929,7 @@
             window.location.reload();
         } catch (error) {
             if (error.status === 401) window.location.reload();
-            else notify(`Could not sign out: ${error.message}`);
+            else notify(`Could not sign out: ${error.message}`, "error");
         } finally { button.disabled = false; }
     });
     for (const dialog of document.querySelectorAll("dialog")) {
@@ -723,6 +937,9 @@
             // A successful temporary-password login immediately reopens this dialog.
             if (dialog.open) return;
             for (const input of dialog.querySelectorAll('input[type="password"]')) input.value = "";
+            if (!document.querySelector("dialog[open]") && (document.activeElement === document.body || dialog.contains(document.activeElement))) {
+                restoreFocus(dialogReturnFocus.get(dialog.id), true);
+            }
         });
     }
     $("auth-dialog").addEventListener("cancel", () => { addDeviceAfterAuth = false; });
@@ -733,6 +950,21 @@
         const seconds = Math.floor((Date.now() - lastRefreshed) / 1000);
         $("updated-label").textContent = seconds < 2 ? "Page just refreshed" : `Page refreshed ${seconds} seconds ago`;
     }, 1000);
+    function restoreView() {
+        restoreUrlState();
+        render();
+        refresh(true);
+    }
+    window.addEventListener("popstate", restoreView);
+    window.addEventListener("daemonhunter:refresh", () => refresh(true));
+    window.addEventListener("daemonhunter:notice", (event) => {
+        if (["success", "error", "info"].includes(event.detail?.type)) notify(event.detail.message, event.detail.type);
+    });
+    window.addEventListener("pageshow", (event) => {
+        if (event.persisted) restoreView();
+    });
+    restoreUrlState();
     render();
+    if (inventoryPage && selectedId !== state.selected_id) refresh(true);
     pollTimer = setTimeout(poll, 5000);
 })();

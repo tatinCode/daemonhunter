@@ -2,16 +2,17 @@
   <div class="panel-heading">
     <h2 id="devices-title">{{ 'Inventory' if page == 'devices' else 'Devices' }}</h2>
     <div class="table-tools">
-      <label class="search-field">{{ icon('search') }}<span class="visually-hidden">Search devices by name or host</span><input id="device-search" type="search" placeholder="Search devices…" autocomplete="off"></label>
+      <label class="search-field">{{ icon('search') }}<span class="visually-hidden">Search devices by name or host</span><input id="device-search" type="search" placeholder="Search devices…" autocomplete="off" maxlength="255"></label>
       <div class="filter-tabs" role="group" aria-label="Filter devices by status">
         {% for filter in ['all', 'online', 'offline', 'unknown'] %}<button type="button" data-filter="{{ filter }}" class="filter-button {% if filter == 'all' %}active{% endif %}" aria-pressed="{{ 'true' if filter == 'all' else 'false' }}">{{ filter | capitalize }}</button>{% endfor %}
       </div>
+      {% if page == 'devices' %}<button type="button" class="text-button mobile-sort" id="sort-devices-mobile" aria-label="Sort devices by name descending">Sort: Name ↑</button>{% endif %}
     </div>
   </div>
   <div class="table-scroll">
     <table class="device-table {% if page == 'devices' %}inventory-table{% endif %}">
       <caption class="visually-hidden">Device reachability. Select a device to view details.</caption>
-      <thead><tr><th scope="col"><button id="sort-name" type="button" class="sort-button" aria-label="Sort devices by name descending">Device <span id="sort-direction">▴</span></button></th><th scope="col">Status</th>
+      <thead><tr><th scope="col" id="device-name-heading" aria-label="Device" aria-sort="ascending"><button id="sort-name" type="button" class="sort-button" aria-label="Sort devices by name descending">Device <span id="sort-direction">▴</span></button></th><th scope="col">Status</th>
         {% if page == 'devices' %}<th scope="col">Guest visibility</th><th scope="col">Failures</th>{% else %}<th scope="col">CPU</th><th scope="col">Memory</th><th scope="col">Uptime</th>{% endif %}
         <th scope="col">Last status change</th>{% if page == 'devices' %}<th scope="col">Actions</th>{% endif %}
       </tr></thead>
@@ -19,16 +20,16 @@
         {% for device in (state.devices if page == 'devices' else state.devices[:6]) %}
         <tr data-device-id="{{ device.id }}">
           <th scope="row"><div class="device-name-cell">{{ icon('server', 'device-icon') }}<div><button type="button" class="device-select" data-select="{{ device.id }}">{{ device.name }}</button><span class="host">{{ device.host }}</span></div></div></th>
-          <td><span class="status {{ device.status }}"><span class="status-dot" aria-hidden="true"></span>{{ device.status | capitalize }}</span></td>
-          {% if page == 'devices' %}<td>{{ ('Shared' if device.guest_visible else 'Private') if state.can_manage else 'Shared' }}</td><td>{{ device.consecutive_failures if state.can_manage else '—' }}</td>
+          <td data-label="Status"><span class="status {{ device.status }}"><span class="status-dot" aria-hidden="true"></span>{{ device.status | capitalize }}</span></td>
+          {% if page == 'devices' %}<td data-label="Guest visibility">{{ ('Shared' if device.guest_visible else 'Private') if state.can_manage else 'Shared' }}</td><td data-label="Failures">{{ device.consecutive_failures if state.can_manage else '—' }}</td>
           {% else %}<td class="unavailable" title="CPU metrics are not collected">—</td><td class="unavailable" title="Memory metrics are not collected">—</td><td class="unavailable" title="Uptime is not collected">—</td>{% endif %}
-          <td class="last-change">{% if device.last_status_change %}<time datetime="{{ device.last_status_change }}">{{ device.last_status_change }}</time>{% else %}—{% endif %}</td>
-          {% if page == 'devices' %}<td><span class="muted">{{ 'Enable JavaScript to manage' if state.can_manage else 'Read only' }}</span></td>{% endif %}
+          <td class="last-change" data-label="Last status change">{% if device.last_status_change %}<time datetime="{{ device.last_status_change }}">{{ device.last_status_change }}</time>{% else %}—{% endif %}</td>
+          {% if page == 'devices' %}<td class="device-actions" data-label="Actions"><span class="muted">{{ 'Enable JavaScript to manage' if state.can_manage else 'Read only' }}</span></td>{% endif %}
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-  <div id="devices-empty" class="empty-state" {% if state.devices %}hidden{% endif %}>{{ icon('server') }}<h3>No devices to display</h3><p>{% if state.can_manage %}Add your first device to start monitoring.{% else %}Devices appear here when an administrator shares them with guests.{% endif %}</p></div>
+  <div id="devices-empty" class="empty-state" {% if state.devices %}hidden{% endif %}>{{ icon('server') }}<h3>No devices to display</h3><p>{% if state.can_manage %}Add your first device to start monitoring.{% else %}Devices appear here when an administrator shares them with guests.{% endif %}</p><div class="empty-actions"><button type="button" class="primary-button" id="devices-empty-action" data-empty-account-action>{{ 'Add device' if state.can_manage else ('Change password' if state.user else ('Set up owner' if state.setup_required else 'Log in')) }}</button><button type="button" class="secondary-button" id="clear-device-filters" hidden>Clear filters</button></div></div>
   <div class="panel-footer"><span id="device-count">{{ state.devices | length }} devices</span><span id="visibility-label">{{ 'All registered devices' if state.can_manage else 'Guest-visible devices only' }}</span>{% if page == 'overview' %}<a href="{{ url_for('dashboard_devices') }}">View all devices {{ icon('arrow') }}</a>{% endif %}</div>
 </section>

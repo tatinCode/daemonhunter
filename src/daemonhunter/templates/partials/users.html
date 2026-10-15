@@ -1,0 +1,24 @@
+{% set owner_access = state.can_manage and state.user.role == 'owner' %}
+<section id="users-access" class="panel access-panel" {% if owner_access %}hidden{% endif %} aria-labelledby="users-access-title">
+  {{ icon('user') }}<h2 id="users-access-title">Owner access required</h2>
+  <p class="muted" id="users-access-message">{% if state.user and state.user.must_change_password %}Change your temporary password before continuing. Only the owner can manage admin accounts.{% elif state.user %}Only the owner can manage admin accounts.{% else %}Log in with the owner account to manage admins.{% endif %}</p>
+  <button type="button" class="primary-button" id="users-login" {% if state.user and not state.user.must_change_password %}hidden{% endif %}>{{ 'Change password' if state.user else ('Set up owner' if state.setup_required else 'Log in') }}</button>
+</section>
+<section id="users-content" class="panel" {% if not owner_access %}hidden{% endif %} aria-labelledby="users-title">
+  <div class="panel-heading"><h2 id="users-title">Accounts</h2><div class="history-header-actions"><span id="users-refreshing" class="refresh-indicator" role="status" aria-hidden="true">{{ icon('refresh') }}Refreshing…</span><button type="button" class="primary-button" id="add-admin-button">{{ icon('plus') }}Add admin</button></div></div>
+  <p class="form-error history-error" id="users-error" role="alert" hidden></p>
+  <p class="history-loading" id="users-loading" role="status">Loading accounts…</p>
+  <div class="table-scroll" id="users-results"><table class="users-table"><caption class="visually-hidden">Owner and administrator accounts</caption><thead><tr><th scope="col">Username</th><th scope="col">Role</th><th scope="col">Account</th><th scope="col">Password</th><th scope="col">Actions</th></tr></thead><tbody id="user-rows"></tbody></table></div>
+  <div class="panel-footer"><span id="users-count">Accounts</span><span>The owner account is protected.</span></div>
+</section>
+
+<dialog id="user-dialog" aria-labelledby="user-dialog-title">
+  <div class="dialog-heading"><div><h2 id="user-dialog-title">Add admin</h2><p id="user-dialog-description"></p></div><button type="button" class="icon-button" data-close="user-dialog" aria-label="Close account form">{{ icon('close') }}</button></div>
+  <form id="user-form">
+    <div id="admin-username-field"><label for="admin-username">Username</label><input id="admin-username" name="username" autocomplete="off" maxlength="100" required></div>
+    <div id="admin-password-field"><label for="admin-password">Temporary password</label><input id="admin-password" name="temporary_password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required><label for="admin-confirm-password">Confirm temporary password</label><input id="admin-confirm-password" name="confirm_password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required></div>
+    <p id="admin-password-hint" class="form-hint">The admin must change this password on their next login.</p>
+    <p class="form-error" role="alert" hidden></p>
+    <div class="dialog-actions"><button type="button" class="secondary-button" data-close="user-dialog">Cancel</button><button type="submit" class="primary-button" id="user-submit">Add admin</button></div>
+  </form>
+</dialog>

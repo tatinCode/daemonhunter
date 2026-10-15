@@ -18,6 +18,7 @@ class DashboardParser(HTMLParser):
         self.in_state = False
         self.state_text = ""
         self.assets: list[str] = []
+        self.favicon: str | None = None
         self.elements_by_id: dict[str, dict] = {}
         self.button_text: dict[str, str] = {}
         self.active_button: str | None = None
@@ -36,6 +37,8 @@ class DashboardParser(HTMLParser):
             self.assets.append(values["src"])
         if tag == "link" and values.get("rel") == "stylesheet":
             self.assets.append(values["href"])
+        if tag == "link" and values.get("rel") == "icon":
+            self.favicon = values["href"]
 
     def handle_data(self, data: str) -> None:
         if self.active_button:
@@ -252,6 +255,11 @@ def test_dashboard_assets_and_templates_work_outside_repository(
     parser = DashboardParser()
     parser.feed(response.text)
     assert len(parser.assets) == 2
+    assert parser.favicon is not None
+    favicon = api_client.get(parser.favicon)
+    assert favicon.status_code == 200
+    assert favicon.headers["content-type"].startswith("image/svg+xml")
+    assert '<svg xmlns="http://www.w3.org/2000/svg"' in favicon.text
     for url in parser.assets:
         assert url.startswith("http://testserver/static/")
         asset = api_client.get(url)

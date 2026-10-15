@@ -81,11 +81,14 @@ registering devices and determining whether they are online.
 - Add dedicated Devices and Activity pages with real sidebar navigation
 - Support editing, sharing and confirmed deletion from the full inventory
 - Add admin-only activity search, device/status/date filters and snapshot pagination
+- Add an Account page for voluntary and required password changes
+- Add owner-only admin-account management with session-revocation handling
+- Run browser regression checks in a dedicated Chromium CI job
 - Mark uncollected metrics unavailable and avoid presenting refresh time as probe time
 
 #### Dashboard Follow-ups
 
-- Additional dashboard user-management and settings screens
+- A dashboard editor for global application settings
 - Metrics ingestion
 - Configured service and port checks
 - Docker deployment
