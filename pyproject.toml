@@ -1,8 +1,11 @@
 [project]
 name = "daemonhunter"
 version = "0.1.0"
-description = "Add your description here"
+description = "a self-hosted platform for monitoring and managing servers, devices, and services."
 readme = "README.md"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE"]
+
 authors = [
     { name = "tatinCode", email = "justinbusalpa22@gmail.com" }
 ]
