@@ -456,3 +456,11 @@ Additional design notes are available in [`documentation/`](documentation/).
 7. Monitoring agent
 8. Metrics ingestion
 9. Docker deployment
+
+
+## License
+
+Copyright © 2026 tatinCode.
+
+DaemonHunter is licensed under the GNU Affero General Public License,
+version 3 only (AGPL-3.0-only). See [LICENSE](LICENSE) for the full terms.
