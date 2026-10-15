@@ -1,0 +1,20 @@
+<section id="activity-access" class="panel access-panel" {% if state.can_manage %}hidden{% endif %} aria-labelledby="activity-access-title">
+  {{ icon('activity') }}<h2 id="activity-access-title">Status activity is available to admins</h2><p class="muted">Log in to browse device transitions. Device management and account changes are not part of this status log.</p><button type="button" class="primary-button" id="activity-login">{{ 'Change password' if state.user else ('Set up owner' if state.setup_required else 'Log in') }}</button>
+</section>
+<section id="activity-content" class="panel history-panel" {% if not state.can_manage %}hidden{% endif %} aria-labelledby="history-title">
+  <div class="panel-heading"><div><h2 id="history-title">Status history</h2><p class="form-hint">Recorded reachability transitions, newest first. Times below use your local timezone.</p></div><div class="history-header-actions"><span id="activity-refreshing" class="refresh-indicator" role="status" aria-hidden="true">{{ icon('refresh') }}Refreshing…</span><button type="button" class="secondary-button" id="activity-refresh">{{ icon('refresh') }}Refresh latest</button></div></div>
+  <form id="activity-filters" class="activity-filters">
+    <label>Search name or host<input type="search" name="q" id="activity-search" placeholder="Search activity…" maxlength="100"></label>
+    <label>Device<select name="device_id" id="activity-device"><option value="">All devices</option>{% if state.can_manage %}{% for device in state.devices %}<option value="{{ device.id }}">{{ device.name }}</option>{% endfor %}{% endif %}</select></label>
+    <label>Resulting status<select name="new_status" id="activity-status"><option value="">All statuses</option><option value="online">Online</option><option value="offline">Offline</option><option value="unknown">Unknown</option></select></label>
+    <label>From (local)<input type="datetime-local" name="start" id="activity-start" step="1"></label>
+    <label>To (local)<input type="datetime-local" name="end" id="activity-end" step="1"></label>
+    <label>Per page<select name="limit" id="activity-limit"><option value="25">25</option><option value="50">50</option><option value="100">100</option></select></label>
+    <div class="activity-filter-actions"><button type="submit" class="primary-button">Apply filters</button><button type="button" class="secondary-button" id="activity-clear">Clear</button></div>
+  </form>
+  <p class="form-error history-error" id="activity-error" role="alert" hidden></p>
+  <p class="history-loading" id="activity-loading" role="status">Loading status history…</p>
+  <div class="table-scroll" id="history-results"><table class="history-table"><caption class="visually-hidden">Device status transition history</caption><thead><tr><th scope="col">Time</th><th scope="col">Device</th><th scope="col">Host</th><th scope="col">Transition</th></tr></thead><tbody id="history-rows"></tbody></table></div>
+  <div id="history-empty" class="empty-state" hidden><h3>No matching transitions</h3><p>Try different filters, or run the monitor worker to record status changes.</p><div class="empty-actions"><button type="button" class="secondary-button" id="history-clear-filters">Clear filters</button><a class="secondary-button" href="{{ url_for('dashboard_devices') }}">Manage devices</a></div></div>
+  <div class="panel-footer history-pagination"><span id="history-count">0 transitions</span><div><button type="button" class="secondary-button" id="history-previous" disabled>Previous</button><span id="history-page">Page 1 of 1</span><button type="button" class="secondary-button" id="history-next" disabled>Next</button></div></div>
+</section>

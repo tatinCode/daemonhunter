@@ -1,0 +1,125 @@
+{% from "icons.html" import icon, sprite %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="DaemonHunter: real-time visibility into your homelab's device reachability.">
+  <title>{{ page | capitalize }} · DaemonHunter</title>
+  <link rel="icon" href="{{ url_for('static', path='/favicon.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ url_for('static', path='/dashboard.css') }}">
+  <script defer src="{{ url_for('static', path='/dashboard.js') }}"></script>
+  {% if page in ['account', 'users'] %}<link rel="stylesheet" href="{{ url_for('static', path='/accounts.css') }}"><script defer src="{{ url_for('static', path='/accounts.js') }}"></script>{% endif %}
+</head>
+<body data-state-url="{{ url_for('dashboard_state') }}" data-page="{{ page }}" data-devices-url="{{ url_for('dashboard_devices') }}" data-activity-url="{{ url_for('dashboard_activity') }}">
+  {{ sprite() }}
+  <a class="skip-link" href="#main">Skip to main content</a>
+  <aside class="sidebar" aria-label="Main navigation">
+    <a class="brand" href="{{ url_for('dashboard') }}">
+      <svg class="ghost-logo" viewBox="0 0 44 48" aria-hidden="true"><path d="M9 37V20a13 13 0 0 1 26 0v17l-5-3-4 4-4-4-4 4-4-4Z"/><circle cx="17" cy="20" r="2"/><circle cx="27" cy="20" r="2"/><path d="M20 27h4M5 13l-2 4m36-4 2 4M7 7l4-3m26 3-4-3M4 31v8l6 3m30-11v8l-6 3"/></svg>
+      <span>DaemonHunter</span>
+    </a>
+    <nav class="navigation">
+      {% for key, route, symbol, label in [('overview', 'dashboard', 'home', 'Overview'), ('devices', 'dashboard_devices', 'server', 'Devices'), ('activity', 'dashboard_activity', 'activity', 'Activity')] %}
+      <a href="{{ url_for(route) }}" class="nav-link {% if page == key %}active{% endif %}" {% if page == key %}aria-current="page"{% endif %}>{{ icon(symbol) }}{{ label }}</a>
+      {% endfor %}
+      <a id="account-nav-link" href="{{ url_for('dashboard_account') }}" class="nav-link {% if page == 'account' %}active{% endif %}" {% if page == 'account' %}aria-current="page"{% endif %} {% if not state.user %}hidden{% endif %}>{{ icon('user') }}Account</a>
+      <a id="users-nav-link" href="{{ url_for('dashboard_users') }}" class="nav-link {% if page == 'users' %}active{% endif %}" {% if page == 'users' %}aria-current="page"{% endif %} {% if not (state.can_manage and state.user.role == 'owner') %}hidden{% endif %}>{{ icon('user') }}Users</a>
+    </nav>
+    <div class="sidebar-note">Reachability monitoring<span>Local. Lightweight. Yours.</span></div>
+    <div class="account">
+      <div class="account-identity" id="account-identity" {% if not state.user %}hidden{% endif %}>
+        <span class="avatar">{{ icon('user') }}</span>
+        <div class="account-details"><strong id="account-name">{{ state.user.username if state.user else '' }}</strong><span id="account-role">{{ state.user.role | capitalize if state.user else '' }}</span></div>
+        <button type="button" class="icon-button" id="logout-button" aria-label="Sign out" title="Sign out" {% if not state.user %}hidden{% endif %}>{{ icon('logout') }}</button>
+      </div>
+      <button type="button" class="account-login" id="auth-button" {% if state.can_manage %}hidden{% endif %}>{{ icon('user') }}<span>{% if state.user %}Change password{% elif state.setup_required %}Set up owner{% else %}Log in{% endif %}</span></button>
+    </div>
+  </aside>
+
+  <main id="main" class="workspace" tabindex="-1">
+    <header id="overview" class="page-header">
+      <div><h1>{{ page | capitalize }}</h1><p>{% if page == 'overview' %}Your homelab, at a glance.{% elif page == 'devices' %}Your inventory. Under control.{% elif page == 'activity' %}A timeline of what changed.{% elif page == 'account' %}Your profile and password.{% else %}Manage administrator accounts.{% endif %}</p></div>
+      <div class="header-actions">
+        <span class="updated-label">{{ icon('refresh') }}<span id="updated-label">Page just refreshed</span></span>
+        <button type="button" class="primary-button" id="add-device-button">{{ icon('plus') }}Add device</button>
+      </div>
+    </header>
+    <noscript><p class="notice">JavaScript is disabled. This page shows stored statuses; reload for updates. Sign-in and Add device require JavaScript. The existing API remains available at <a href="/docs">/docs</a>.</p></noscript>
+    <p id="refresh-error" class="notice" role="status" hidden>Unable to refresh. Displaying the last loaded results; retrying automatically.</p>
+    <div id="action-message" class="notice notification" hidden>
+      <span id="action-message-text" role="status" aria-live="polite" aria-atomic="true"></span>
+      <button type="button" class="icon-button" id="dismiss-notification" aria-label="Dismiss notification">{{ icon('close') }}</button>
+    </div>
+
+    {% if page == 'overview' %}
+    <section class="summary-grid" aria-label="Device summary">
+      {% for key, label, symbol, color in [('total', 'Total devices', 'server', ''), ('online', 'Online', 'ring', 'online'), ('offline', 'Offline', 'ring', 'offline'), ('attention', 'Needs attention', 'warning', 'attention')] %}
+      <div class="summary-card {{ color }}">{{ icon(symbol, 'summary-icon') }}<div><span>{{ label }}</span><strong data-count="{{ key }}">{{ state.counts[key] }}</strong></div></div>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    {% if page == 'account' %}
+    {% include "partials/account.html" %}
+    {% elif page == 'users' %}
+    {% include "partials/users.html" %}
+    {% elif page != 'activity' %}
+    {% if page == 'devices' %}<p id="devices-mode-note" class="muted">{% if state.can_manage %}Manage device names, hosts and guest visibility. Select a device to inspect its history.{% else %}Read-only view of shared devices. Log in as an admin to manage the inventory.{% endif %}</p>{% endif %}
+    {% include "partials/device_inventory.html" %}
+    <div class="detail-grid {% if page == 'devices' %}single-panel{% endif %}">
+      <section id="device-details" class="panel selected-panel" aria-labelledby="selected-title">
+        <div class="panel-heading"><h2 id="selected-title">{{ icon('server') }}Selected device <span id="selected-name">· Select a device</span></h2><span class="small-label">Stored reachability</span></div>
+        <div id="selected-details" class="selected-details"><p class="muted">Select a device from the table to inspect its status and recent transitions.</p></div>
+      </section>
+      {% if page == 'overview' %}
+      <section id="activity" class="panel activity-panel" aria-labelledby="activity-title">
+        <div class="panel-heading"><h2 id="activity-title">{{ icon('activity') }}Recent activity</h2><a class="text-button" id="view-activity" href="{{ url_for('dashboard_activity') }}" {% if not state.can_manage %}hidden{% endif %}>View all</a></div>
+        <div id="activity-list">
+          {% if not state.can_manage %}<p class="panel-placeholder">Sign in as an admin to view device transition history.</p>
+          {% elif not state.events %}<p class="panel-placeholder">No status transitions recorded yet. Run the monitor worker to start collecting history.</p>
+          {% else %}{% for event in state.events[:3] %}<div class="activity-item">{{ icon('ring', event.new_status) }}<div><strong>{{ event.name }}</strong> became {{ event.new_status }}<span class="host">{{ event.host }}</span></div><time datetime="{{ event.occurred_at }}">{{ event.occurred_at }}</time></div>{% endfor %}{% endif %}
+        </div>
+      </section>
+      {% endif %}
+    </div>
+    {% else %}
+    {% include "partials/activity_history.html" %}
+    {% endif %}
+    <footer class="workspace-footer"><span>{{ icon('refresh') }}Page refreshes every 5 seconds. The monitor worker runs separately.</span><span>CPU, memory, uptime and latency await agent collection.</span></footer>
+  </main>
+
+  <dialog id="device-dialog" aria-labelledby="device-dialog-title">
+    <div class="dialog-heading"><div><h2 id="device-dialog-title">Add device</h2><p id="device-dialog-description">Register a host for the monitoring worker.</p></div><button type="button" class="icon-button" data-close="device-dialog" aria-label="Close device form">{{ icon('close') }}</button></div>
+    <form id="device-form">
+      <label for="device-name">Device name</label><input id="device-name" name="name" required maxlength="100" placeholder="raspberrypi-01" autocomplete="off">
+      <label for="device-host">IP address or hostname</label><input id="device-host" name="host" required maxlength="255" placeholder="192.168.1.20" autocomplete="off">
+      <label class="checkbox-label"><input type="checkbox" name="guest_visible">Share this device with guests</label>
+      <p class="form-hint" id="device-form-hint">New devices start as Unknown until the monitor establishes reachability.</p>
+      <p class="form-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button type="button" class="secondary-button" data-close="device-dialog">Cancel</button><button type="submit" class="primary-button"><span id="device-submit-label">Add device</span></button></div>
+    </form>
+  </dialog>
+
+  <dialog id="delete-dialog" aria-labelledby="delete-dialog-title">
+    <div class="dialog-heading"><h2 id="delete-dialog-title">Delete device?</h2><button type="button" class="icon-button" data-close="delete-dialog" aria-label="Close delete confirmation">{{ icon('close') }}</button></div>
+    <p id="delete-device-name"></p><p class="muted">This permanently removes the device and its recorded status history. This cannot be undone.</p>
+    <form id="delete-form"><p class="form-error" role="alert" hidden></p><div class="dialog-actions"><button type="button" class="secondary-button" data-close="delete-dialog">Cancel</button><button type="submit" class="danger-button">Delete device</button></div></form>
+  </dialog>
+
+  <dialog id="auth-dialog" aria-labelledby="auth-dialog-title">
+    <div class="dialog-heading"><div><h2 id="auth-dialog-title">Sign in</h2><p id="auth-dialog-description">Use your owner or admin account.</p></div><button type="button" class="icon-button" data-close="auth-dialog" aria-label="Close sign-in">{{ icon('close') }}</button></div>
+    <form id="auth-form">
+      <div id="auth-username-field"><label for="auth-username">Username</label><input id="auth-username" name="username" maxlength="100" autocomplete="username" required></div>
+      <label for="auth-password" id="auth-password-label">Password</label><input id="auth-password" name="password" type="password" maxlength="128" autocomplete="current-password" required>
+      <div id="auth-new-password-field" hidden><label for="auth-new-password">New password</label><input id="auth-new-password" name="new_password" type="password" minlength="12" maxlength="128" autocomplete="new-password" disabled></div>
+      <div id="auth-token-field" hidden><label for="auth-token">Setup token</label><input id="auth-token" name="setup_token" type="password" minlength="32" maxlength="256" autocomplete="off" disabled><p class="form-hint">Use the first-run token printed in the server logs or configured by the administrator.</p></div>
+      <p class="form-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button type="button" class="secondary-button" data-close="auth-dialog">Cancel</button><button type="submit" class="primary-button" id="auth-submit">Sign in</button></div>
+    </form>
+  </dialog>
+  <script type="application/json" id="dashboard-state">{{ state | tojson }}</script>
+  {% if page in ['account', 'users'] %}<script type="application/json" id="account-viewer">{{ state.user | tojson }}</script>{% endif %}
+</body>
+</html>

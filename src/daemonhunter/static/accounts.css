@@ -1,0 +1,23 @@
+.account-panel-body { padding: 20px; }
+.account-panel-body > h2 { font-size: 18px; }
+.account-password-form { max-width: 480px; }
+.account-password-form .dialog-actions { justify-content: flex-start; }
+.users-table { width: 100%; border-collapse: collapse; text-align: left; }
+.users-table :is(th, td) { padding: 14px 18px; border-bottom: 1px solid var(--border); font-size: 13px; overflow-wrap: anywhere; }
+.users-table th { color: var(--muted); font-size: 12px; font-weight: 500; }
+.users-table th:first-child { width: 22%; }
+.user-actions { display: flex; flex-wrap: wrap; gap: 10px 14px; }
+.user-actions button { font-size: 12px; }
+.user-protected { color: var(--muted); font-size: 12px; }
+@media (max-width: 700px) {
+    .account-panel-body { padding: 16px; }
+    .users-table { display: block; }
+    .users-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    .users-table tbody { display: grid; gap: 12px; padding: 12px; }
+    .users-table tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; padding: 16px; border: 1px solid var(--border); border-radius: 7px; }
+    .users-table tbody :is(th, td) { min-width: 0; width: auto; padding: 0; border: 0; }
+    .users-table tbody th, .users-table .user-actions-cell { grid-column: 1 / -1; }
+    .users-table tbody th:first-child { width: auto; }
+    .users-table td::before { content: attr(data-label); display: block; font-size: 11px; color: var(--muted); margin-bottom: 7px; }
+    .user-actions button { min-height: 36px; padding: 7px 10px; border: 1px solid #405363; border-radius: 5px; }
+}

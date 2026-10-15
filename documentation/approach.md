@@ -12,7 +12,7 @@ registering devices and determining whether they are online.
 3. Device management API - complete
 4. Admin Authentication and guest visibility - complete
 5. Ping monitoring and status transition logging - complete
-6. Basic dashboard
+6. Basic dashboard - functionality complete; layout polish in progress
 7. Monitoring agent
 8. Metrics ingestion
 9. Configured service and port checks
@@ -69,21 +69,43 @@ registering devices and determining whether they are online.
 - Add an admin-only status-history endpoint, newest first
 
 
-## Current Milestone
-
 ### Basic Dashboard
 
-#### Goals
+- Render a responsive overview with locally served styles, scripts, and icons
+- Restrict guests to shared devices and unlock all devices for ready admins
+- Show real reachability counts, search, filters, sorting, and device selection
+- Refresh every five seconds while preserving controls and last loaded results
+- Show recorded status transitions and selected-device history to admins
+- Support sign-in, owner setup, required password changes, and sign-out
+- Allow admins to add private or guest-visible devices through the existing API
+- Add dedicated Devices and Activity pages with real sidebar navigation
+- Support editing, sharing and confirmed deletion from the full inventory
+- Add admin-only activity search, device/status/date filters and snapshot pagination
+- Add an Account page for voluntary and required password changes
+- Add owner-only admin-account management with session-revocation handling
+- Run browser regression checks in a dedicated Chromium CI job
+- Mark uncollected metrics unavailable and avoid presenting refresh time as probe time
 
-- Render a guest-visible device status page
-- Show each device's name, host, and current status
-- Refresh statuses automatically while the page is open
-- Serve the page from the existing FastAPI process
-- Keep the dashboard read-only
+#### Dashboard Follow-ups
 
-#### Out of Scope
-
-- Monitoring agents
+- A dashboard editor for global application settings
 - Metrics ingestion
 - Configured service and port checks
 - Docker deployment
+
+## Next Milestone
+
+### Monitoring Agent
+
+After finishing dashboard layout review and polish, define the first agent's
+collection and reporting scope before implementation.
+
+## Current Focus and Deferred Plans
+
+The current focus is finishing the dashboard layout and usability across Overview,
+Devices, and Activity, including empty/populated states and desktop/mobile layouts.
+
+Optional named-port monitoring is deferred. The agreed plan supports IP-only devices
+and multiple named TCP services per device, with independent status checks and
+optional HTTP/HTTPS links. See [Development Plan](plan.md) for the configuration,
+monitoring, visibility, migration, and verification requirements.

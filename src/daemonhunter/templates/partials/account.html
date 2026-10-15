@@ -1,0 +1,19 @@
+<section id="account-access" class="panel access-panel" {% if state.user %}hidden{% endif %} aria-labelledby="account-access-title">
+  {{ icon('user') }}<h2 id="account-access-title">Log in to manage your account</h2><p class="muted">Use your owner or admin account to view your profile and change your password.</p><button type="button" class="primary-button" id="account-login">{{ 'Set up owner' if state.setup_required else 'Log in' }}</button>
+</section>
+<section id="account-content" class="panel account-panel" {% if not state.user %}hidden{% endif %} aria-labelledby="account-profile-title">
+  <div class="panel-heading"><h2 id="account-profile-title">Your account</h2></div>
+  <div class="account-panel-body">
+    <dl class="device-facts"><div><dt>Username</dt><dd id="profile-username">{{ state.user.username if state.user else '' }}</dd></div><div><dt>Role</dt><dd id="profile-role">{{ state.user.role | capitalize if state.user else '' }}</dd></div></dl>
+    <p id="account-password-required" class="notice" {% if not (state.user and state.user.must_change_password) %}hidden{% endif %}>Change your temporary password before managing devices or users.</p>
+    <h2 id="password-form-title">Change password</h2>
+    <p class="form-hint" id="password-guidance">Use 12–128 characters for your new password. Changing it signs out your other sessions; this session stays signed in.</p>
+    <form id="account-password-form" class="account-password-form" aria-labelledby="password-form-title" aria-describedby="password-guidance">
+      <label for="account-current-password">Current password</label><input id="account-current-password" name="current_password" type="password" autocomplete="current-password" maxlength="128" required>
+      <label for="account-new-password">New password</label><input id="account-new-password" name="new_password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required>
+      <label for="account-confirm-password">Confirm new password</label><input id="account-confirm-password" name="confirm_password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required>
+      <p class="form-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button type="submit" class="primary-button">Change password</button></div>
+    </form>
+  </div>
+</section>
