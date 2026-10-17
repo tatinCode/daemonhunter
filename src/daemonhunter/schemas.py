@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated, Literal, Self
 
 from pydantic import (
@@ -8,6 +8,7 @@ from pydantic import (
         SecretStr,
         StringConstraints,
         model_validator,
+        field_validator,
         )
 
 
@@ -27,6 +28,33 @@ UserName = Annotated[
             strip_whitespace=True,
             min_length=1,
             max_length=100,
+            ),
+        ]
+
+MetricPercentage = Annotated[
+        float,
+        Field(
+            strict=True,
+            ge=0,
+            le=100,
+            allow_inf_nan=False,
+            ),
+        ]
+
+MetricCount = Annotated[
+        int,
+        Field(
+            strict=True,
+            ge=0,
+            le=9223372036854775807,
+            ),
+        ]
+
+MetricTemperature = Annotated[
+        float,
+        Field(
+            strict=True,
+            allow_inf_nan=False,
             ),
         ]
 
@@ -209,3 +237,64 @@ class PublicDeviceResponse(BaseModel):
     name: str
     host: str
     status: Literal["unknown", "offline", "online"]
+
+
+class AgentMetricsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    hostname: Annotated[
+            str,
+            StringConstraints(
+                strip_whitespace=True,
+                min_length=1,
+                max_length=255,
+                ),
+            ]
+    os: Annotated[
+            str,
+            StringConstraints(
+                strip_whitespace=True,
+                min_length=1,
+                max_length=64,
+                ),
+            ]
+    cpu_percent: MetricPercentage
+    memory_percent: MetricPercentage
+    memory_total: MetricCount
+    memory_used: MetricCount
+    disk_percent: MetricPercentage
+    disk_total: MetricCount
+    disk_used: MetricCount
+    temperature_celsius: MetricTemperature | None = None
+    uptime_seconds: MetricCount
+
+    @model_validator(mode="after")
+    def validate_sizes(self) -> Self:
+        if self.memory_used > self.memory_total:
+            raise ValueError("memory_used cannot exceed memory_total")
+
+        if self.disk_used > self.disk_total:
+            raise ValueError("disk_used cannot exceed disk_total")
+
+        return self
+
+
+class DeviceMetricsResponse(AgentMetricsRequest):
+    model_config = ConfigDict(from_attributes=True)
+
+    device_id: int
+    received_at: datetime
+
+    @field_validator("received_at")
+    @classmethod
+    def normalize_received_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+
+        return value.astimezone(timezone.utc)
+
+
+class AgentTokenResponse(BaseModel):
+    device_id: int
+    agent_token: str = Field(repr=False)
+    issued_at: datetime

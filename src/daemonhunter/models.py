@@ -2,6 +2,9 @@ from datetime import datetime
 
 from sqlalchemy import (
         Boolean,
+        BigInteger,
+        Float,
+        UniqueConstraint,
         Integer,
         CheckConstraint,
         ForeignKey,
@@ -14,6 +17,7 @@ from sqlalchemy import (
         true,
         )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from typing import Optional
 
 from daemonhunter.database import Base
 
@@ -127,6 +131,17 @@ class Device(Base):
             cascade="all, delete-orphan",
             )
 
+    agent_credential: Mapped[Optional["DeviceAgentCredential"]] = relationship(
+            back_populates="device",
+            cascade="all, delete-orphan",
+            uselist=False,
+            )
+    latest_metrics: Mapped[Optional["DeviceMetrics"]] = relationship(
+            back_populates="device",
+            cascade="all, delete-orphan",
+            uselist=False,
+            )
+
 
 class DeviceStatusEvent(Base):
     __tablename__ = "device_status_events"
@@ -167,3 +182,101 @@ class DeviceStatusEvent(Base):
             )
 
     device: Mapped[Device] = relationship(back_populates="status_events")
+
+
+class DeviceAgentCredential(Base):
+    __tablename__ = "device_agent_credentials"
+    __table_args__ = (
+            UniqueConstraint(
+                "token_hash",
+                name="uq_device_agent_credentials_token_hash",
+                ),
+            CheckConstraint(
+                "token_hash IS NULL OR lenght(token_hash) = 64",
+                name="ck_device_agent_credentials_token_hash_length",
+                ),
+            )
+
+    device_id: Mapped[int] = mapped_column(
+            ForeignKey("devices.id", ondelete="CASCADE"),
+            primary_key=True,
+            )
+
+    token_hash: Mapped[Optional[str]] = mapped_column(
+            String(64),
+            nullable=True,
+            )
+
+    issued_at: Mapped[datetime] = mapped_column(
+            DateTime(timezone=True),
+            server_default=func.now(),
+            nullable=False,
+            )
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(
+            DateTime(timezone=True),
+            nullable=True,
+            )
+
+    device: Mapped[Device] = relationship(
+            back_populates="agent_credential",
+            )
+
+
+class DeviceMetrics(Base):
+    __tablename__ = "device_metrics"
+    __table_args__ = (
+            CheckConstraint(
+                "cpu_percent >= 0 AND cpu_percent <= 100",
+                name="ck_device_metrics_cpu_percent",
+                ),
+            CheckConstraint(
+                "memory_percent >= 0 AND memory_percent <= 100",
+                name="ck_device_metrics_memory_percent",
+                ),
+            CheckConstraint(
+                "disk_percent >= 0 AND disk_percent <= 100",
+                name="ck_device_metrics_disk_percent",
+                ),
+            CheckConstraint(
+                "memory_total >= 0 AND memory_used >= 0 "
+                "AND memory_used <= memory_total",
+                name="ck_device_metrics_memory_sizes",
+                ),
+            CheckConstraint(
+                "disk_total >= 0 AND disk_used >= 0 "
+                "AND disk_used <= disk_total",
+                name="ck_device_metrics_disk_sizes",
+                ),
+            CheckConstraint(
+                "uptime_seconds >= 0",
+                name="ck_device_metrics_uptime",
+                ),
+            )
+
+    device_id: Mapped[int] = mapped_column(
+            ForeignKey("devices.id", ondelete="CASCADE"),
+            primary_key=True,
+            )
+    hostname: Mapped[str] = mapped_column(String(255))
+    os: Mapped[str] = mapped_column(String(64))
+    cpu_percent: Mapped[float] = mapped_column(Float)
+    memory_percent: Mapped[float] = mapped_column(Float)
+    memory_total: Mapped[int] = mapped_column(BigInteger)
+    memory_used: Mapped[int] = mapped_column(BigInteger)
+    disk_percent: Mapped[float] = mapped_column(Float)
+    disk_total: Mapped[int] = mapped_column(BigInteger)
+    disk_used: Mapped[int] = mapped_column(BigInteger)
+    temperature_celsius: Mapped[Optional[float]] = mapped_column(
+            Float,
+            nullable=True,
+            )
+    uptime_seconds: Mapped[int] = mapped_column(BigInteger)
+    received_at: Mapped[datetime] = mapped_column(
+            DateTime(timezone=True),
+            server_default=func.now(),
+            nullable=False,
+            )
+
+    device: Mapped[Device] = relationship(
+            back_populates="latest_metrics",
+            )

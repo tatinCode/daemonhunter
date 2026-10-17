@@ -14,6 +14,10 @@ from daemonhunter.config import (
         SETUP_TOKEN,
         SETUP_TOKEN_WAS_GENERATED,
         )
+from daemonhunter.routers.agent_metrics import (
+        admin_router as admin_agent_router,
+        agent_router as agent_metrics_router,
+        )
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
