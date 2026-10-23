@@ -192,7 +192,7 @@ class DeviceAgentCredential(Base):
                 name="uq_device_agent_credentials_token_hash",
                 ),
             CheckConstraint(
-                "token_hash IS NULL OR lenght(token_hash) = 64",
+                "token_hash IS NULL OR length(token_hash) = 64",
                 name="ck_device_agent_credentials_token_hash_length",
                 ),
             )

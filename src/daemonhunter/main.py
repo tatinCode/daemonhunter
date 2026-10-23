@@ -50,6 +50,8 @@ def create_app() -> FastAPI:
     app.include_router(admin_users_router)
     app.include_router(admin_devices_router)
     app.include_router(admin_activity_router)
+    app.include_router(admin_agent_router)
+    app.include_router(agent_metrics_router)
     app.include_router(dashboard_router)
     app.mount(
             "/static",
@@ -75,7 +77,7 @@ def create_app() -> FastAPI:
         response = await call_text(request)
 
         if request.url.path in {"/", "/devices", "/activity", "/account", "/users", "/dashboard/state"} or request.url.path.startswith(
-                ("/api/v1/auth/", "/api/v1/admin/")
+                ("/api/v1/auth/", "/api/v1/admin/", "/api/v1/agent/")
                 ):
             response.headers["Cache-Control"] = "no-store"
 
